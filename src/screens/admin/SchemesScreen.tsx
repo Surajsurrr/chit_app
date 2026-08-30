@@ -17,7 +17,7 @@ import Button from '../../components/Button';
 import { StatusBar } from 'expo-status-bar';
 
 export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { schemes, customers, addScheme } = useChitData();
+  const { schemes, customers, addScheme, logout } = useChitData();
 
   // Create Scheme states
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -127,8 +127,8 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           <Text style={styles.headerTitle}>Chit Schemes</Text>
           <Text style={styles.headerSubtitle}>View and structure investment plans</Text>
         </View>
-        <TouchableOpacity style={styles.roleBtn} onPress={() => navigation.navigate('RoleSelection')}>
-          <Text style={styles.roleBtnText}>Switch Role</Text>
+        <TouchableOpacity style={styles.roleBtn} onPress={() => logout()}>
+          <Text style={styles.roleBtnText}>Log Out</Text>
         </TouchableOpacity>
       </View>
 

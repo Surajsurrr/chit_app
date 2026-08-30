@@ -21,7 +21,7 @@ import { getStatusLabel } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
 
 export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ route, navigation }) => {
-  const { customers, getCustomerStats, recordPayment } = useChitData();
+  const { customers, getCustomerStats, recordPayment, logout } = useChitData();
   const [searchQuery, setSearchQuery] = useState('');
   
   // Modal states
@@ -134,8 +134,8 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
           <Text style={styles.headerTitle}>Collections</Text>
           <Text style={styles.headerSubtitle}>Monitor schedules and record payments</Text>
         </View>
-        <TouchableOpacity style={styles.roleBtn} onPress={() => navigation.navigate('RoleSelection')}>
-          <Text style={styles.roleBtnText}>Switch Role</Text>
+        <TouchableOpacity style={styles.roleBtn} onPress={() => logout()}>
+          <Text style={styles.roleBtnText}>Log Out</Text>
         </TouchableOpacity>
       </View>
 

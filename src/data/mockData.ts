@@ -4,6 +4,7 @@ export interface Customer {
   id: string;
   name: string;
   phone: string;
+  pin: string; // 4-digit PIN for login
   schemeId: string;
   amountGiven: number;
   collectionAmount: number;
@@ -229,6 +230,7 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     id: 'cust-1',
     name: 'Ravi Kumar',
     phone: '9876543210',
+    pin: '1234',
     schemeId: 'scheme-1',
     amountGiven: 50000,
     collectionAmount: 1000,
@@ -241,6 +243,7 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     id: 'cust-2',
     name: 'Priya S',
     phone: '9876543211',
+    pin: '1234',
     schemeId: 'scheme-2',
     amountGiven: 25000,
     collectionAmount: 500,
@@ -253,6 +256,7 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     id: 'cust-3',
     name: 'Anitha R',
     phone: '9876543212',
+    pin: '1234',
     schemeId: 'scheme-3',
     amountGiven: 100000,
     collectionAmount: 2000,

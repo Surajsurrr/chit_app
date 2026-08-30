@@ -14,6 +14,11 @@ import { calculateNextPaymentDate } from '../utils/dateHelpers';
 
 export type UserRole = 'admin' | 'customer';
 
+export interface AdminCredentials {
+  username: string;
+  password: string;
+}
+
 interface AdminStats {
   totalCustomers: number;
   totalGiven: number;
@@ -38,6 +43,12 @@ interface ChitDataContextType {
   receipts: Receipt[];
   isLoading: boolean;
   
+  // Authentication properties
+  isLoggedIn: boolean;
+  currentUserRole: UserRole | null;
+  currentUserId: string | null;
+  admins: AdminCredentials[];
+  
   // Actions
   switchRole: (role: UserRole) => void;
   selectCustomer: (id: string) => void;
@@ -49,6 +60,18 @@ interface ChitDataContextType {
     method: 'UPI' | 'Cash' | 'Card' | 'Bank Transfer'
   ) => { success: boolean; error?: string; receipt?: Receipt };
   resetData: () => Promise<void>;
+  
+  // Auth & Registration methods
+  loginAsAdmin: (username: string, password: string) => { success: boolean; error?: string };
+  loginAsCustomer: (phone: string, pin: string) => { success: boolean; error?: string };
+  logout: () => void;
+  registerAdmin: (username: string, password: string) => { success: boolean; error?: string };
+  registerCustomer: (
+    name: string,
+    phone: string,
+    pin: string,
+    schemeId: string
+  ) => { success: boolean; error?: string };
   
   // Derived state helper methods
   getCustomerStats: (customerId: string) => CustomerStats;
@@ -64,7 +87,14 @@ const STORAGE_KEYS = {
   PAYMENTS: '@chitflow:payments',
   SCHEMES: '@chitflow:schemes',
   RECEIPTS: '@chitflow:receipts',
+  IS_LOGGED_IN: '@chitflow:is_logged_in',
+  CURRENT_USER_ID: '@chitflow:current_user_id',
+  ADMINS: '@chitflow:admins',
 };
+
+const DEFAULT_ADMINS: AdminCredentials[] = [
+  { username: 'admin', password: 'admin123' }
+];
 
 export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentRole, setCurrentRoleState] = useState<UserRole>('admin');
@@ -74,6 +104,12 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [schemes, setSchemes] = useState<Scheme[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Authentication states
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [currentUserRole, setCurrentUserRole] = useState<UserRole | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [admins, setAdmins] = useState<AdminCredentials[]>([]);
 
   // Load data from storage on startup
   useEffect(() => {
@@ -85,9 +121,25 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const savedPayments = await AsyncStorage.getItem(STORAGE_KEYS.PAYMENTS);
         const savedSchemes = await AsyncStorage.getItem(STORAGE_KEYS.SCHEMES);
         const savedReceipts = await AsyncStorage.getItem(STORAGE_KEYS.RECEIPTS);
+        const savedIsLoggedIn = await AsyncStorage.getItem(STORAGE_KEYS.IS_LOGGED_IN);
+        const savedCurrentUserId = await AsyncStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
+        const savedAdmins = await AsyncStorage.getItem(STORAGE_KEYS.ADMINS);
 
-        if (savedRole) setCurrentRoleState(savedRole as UserRole);
+        if (savedRole) {
+          setCurrentRoleState(savedRole as UserRole);
+          setCurrentUserRole(savedRole as UserRole);
+        }
         if (savedSelectedCust) setSelectedCustomerIdState(savedSelectedCust);
+        if (savedIsLoggedIn === 'true') setIsLoggedIn(true);
+        if (savedCurrentUserId) setCurrentUserId(savedCurrentUserId);
+
+        // Load admins
+        if (savedAdmins) {
+          setAdmins(JSON.parse(savedAdmins));
+        } else {
+          await AsyncStorage.setItem(STORAGE_KEYS.ADMINS, JSON.stringify(DEFAULT_ADMINS));
+          setAdmins(DEFAULT_ADMINS);
+        }
 
         if (savedCustomers && savedPayments && savedSchemes && savedReceipts) {
           setCustomers(JSON.parse(savedCustomers));
@@ -116,11 +168,13 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       await AsyncStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify(INITIAL_PAYMENTS));
       await AsyncStorage.setItem(STORAGE_KEYS.SCHEMES, JSON.stringify(INITIAL_SCHEMES));
       await AsyncStorage.setItem(STORAGE_KEYS.RECEIPTS, JSON.stringify(INITIAL_RECEIPTS));
+      await AsyncStorage.setItem(STORAGE_KEYS.ADMINS, JSON.stringify(DEFAULT_ADMINS));
       
       setCustomers(INITIAL_CUSTOMERS);
       setPayments(INITIAL_PAYMENTS);
       setSchemes(INITIAL_SCHEMES);
       setReceipts(INITIAL_RECEIPTS);
+      setAdmins(DEFAULT_ADMINS);
     } catch (e) {
       console.error('Failed to initialize mock storage data', e);
     }
@@ -133,6 +187,9 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       await initializeData();
       setCurrentRoleState('admin');
       setSelectedCustomerIdState('cust-1');
+      setIsLoggedIn(false);
+      setCurrentUserRole(null);
+      setCurrentUserId(null);
     } catch (e) {
       console.error('Error resetting data context', e);
     } finally {
@@ -142,6 +199,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const switchRole = async (role: UserRole) => {
     setCurrentRoleState(role);
+    setCurrentUserRole(role);
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.ROLE, role);
     } catch (e) {
@@ -273,12 +331,110 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setPayments(updatedPayments);
     setReceipts(updatedReceipts);
 
-    // Save to local storage asynchronously
+    // Save to local storage
     AsyncStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(updatedCustomers)).catch(console.error);
     AsyncStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify(updatedPayments)).catch(console.error);
     AsyncStorage.setItem(STORAGE_KEYS.RECEIPTS, JSON.stringify(updatedReceipts)).catch(console.error);
 
     return { success: true, receipt: newReceipt };
+  };
+
+  // Authentication & Registration Methods
+  const loginAsAdmin = (username: string, password: string) => {
+    const admin = admins.find((a) => a.username.toLowerCase() === username.trim().toLowerCase());
+    if (!admin) {
+      return { success: false, error: 'Admin username not registered' };
+    }
+    if (admin.password !== password) {
+      return { success: false, error: 'Incorrect password' };
+    }
+
+    setIsLoggedIn(true);
+    setCurrentUserRole('admin');
+    setCurrentRoleState('admin');
+    setCurrentUserId(null);
+
+    AsyncStorage.setItem(STORAGE_KEYS.IS_LOGGED_IN, 'true').catch(console.error);
+    AsyncStorage.setItem(STORAGE_KEYS.ROLE, 'admin').catch(console.error);
+    AsyncStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID).catch(console.error);
+
+    return { success: true };
+  };
+
+  const loginAsCustomer = (phone: string, pin: string) => {
+    const customer = customers.find((c) => c.phone === phone);
+    if (!customer) {
+      return { success: false, error: 'Phone number not registered' };
+    }
+    if (customer.pin !== pin) {
+      return { success: false, error: 'Incorrect 4-digit PIN' };
+    }
+
+    setIsLoggedIn(true);
+    setCurrentUserRole('customer');
+    setCurrentRoleState('customer');
+    setCurrentUserId(customer.id);
+    setSelectedCustomerIdState(customer.id);
+
+    AsyncStorage.setItem(STORAGE_KEYS.IS_LOGGED_IN, 'true').catch(console.error);
+    AsyncStorage.setItem(STORAGE_KEYS.ROLE, 'customer').catch(console.error);
+    AsyncStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, customer.id).catch(console.error);
+    AsyncStorage.setItem(STORAGE_KEYS.SELECTED_CUST, customer.id).catch(console.error);
+
+    return { success: true };
+  };
+
+  const registerAdmin = (username: string, password: string) => {
+    const exists = admins.some((a) => a.username.toLowerCase() === username.trim().toLowerCase());
+    if (exists) {
+      return { success: false, error: 'Username is already registered' };
+    }
+
+    const newAdmin: AdminCredentials = {
+      username: username.trim(),
+      password,
+    };
+
+    const updatedAdmins = [...admins, newAdmin];
+    setAdmins(updatedAdmins);
+    AsyncStorage.setItem(STORAGE_KEYS.ADMINS, JSON.stringify(updatedAdmins)).catch(console.error);
+
+    return { success: true };
+  };
+
+  const registerCustomer = (name: string, phone: string, pin: string, schemeId: string) => {
+    const exists = customers.some((c) => c.phone === phone.trim());
+    if (exists) {
+      return { success: false, error: 'Phone number is already registered' };
+    }
+
+    const scheme = schemes.find((s) => s.id === schemeId);
+    if (!scheme) {
+      return { success: false, error: 'Selected chit scheme is invalid' };
+    }
+
+    addCustomer({
+      name: name.trim(),
+      phone: phone.trim(),
+      pin: pin.trim(),
+      schemeId,
+      amountGiven: scheme.totalAmount,
+      collectionAmount: scheme.collectionAmount,
+      frequency: scheme.frequency,
+      startDate: new Date().toISOString(),
+    });
+
+    return { success: true };
+  };
+
+  const logout = () => {
+    setIsLoggedIn(false);
+    setCurrentUserRole(null);
+    setCurrentUserId(null);
+
+    AsyncStorage.setItem(STORAGE_KEYS.IS_LOGGED_IN, 'false').catch(console.error);
+    AsyncStorage.removeItem(STORAGE_KEYS.ROLE).catch(console.error);
+    AsyncStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID).catch(console.error);
   };
 
   // Helper selectors
@@ -333,12 +489,21 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         schemes,
         receipts,
         isLoading,
+        isLoggedIn,
+        currentUserRole,
+        currentUserId,
+        admins,
         switchRole,
         selectCustomer,
         addCustomer,
         addScheme,
         recordPayment,
         resetData,
+        loginAsAdmin,
+        loginAsCustomer,
+        logout,
+        registerAdmin,
+        registerCustomer,
         getCustomerStats,
         getAdminStats,
       }}

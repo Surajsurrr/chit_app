@@ -13,6 +13,7 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
   // Form fields
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [pin, setPin] = useState('');
   const [selectedSchemeId, setSelectedSchemeId] = useState('');
   const [amountGiven, setAmountGiven] = useState('');
   const [collectionAmount, setCollectionAmount] = useState('');
@@ -39,6 +40,12 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
       newErrors.phone = 'Phone number is required';
     } else if (!/^\d{10}$/.test(phone.trim())) {
       newErrors.phone = 'Phone must be a valid 10-digit number';
+    }
+
+    if (!pin) {
+      newErrors.pin = 'Login PIN is required';
+    } else if (!/^\d{4}$/.test(pin)) {
+      newErrors.pin = 'PIN must be exactly 4 digits';
     }
 
     if (!selectedSchemeId) newErrors.scheme = 'Please select a chit scheme';
@@ -69,6 +76,7 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
     addCustomer({
       name: name.trim(),
       phone: phone.trim(),
+      pin: pin.trim(),
       schemeId: selectedSchemeId,
       amountGiven: parseFloat(amountGiven),
       collectionAmount: parseFloat(collectionAmount),
@@ -111,6 +119,17 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
           keyboardType="numeric"
           maxLength={10}
           error={errors.phone}
+        />
+
+        <FormInput
+          label="Set Member Login PIN (4 Digits)"
+          placeholder="e.g. 1234"
+          value={pin}
+          onChangeText={setPin}
+          keyboardType="numeric"
+          maxLength={4}
+          secureTextEntry={true}
+          error={errors.pin}
         />
 
         {/* Scheme Selector */}

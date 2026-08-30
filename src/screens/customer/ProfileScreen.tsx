@@ -7,7 +7,7 @@ import { formatDateLong } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
 
 export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { selectedCustomerId, customers, schemes, getCustomerStats } = useChitData();
+  const { selectedCustomerId, customers, schemes, getCustomerStats, logout } = useChitData();
 
   const customer = customers.find((c) => c.id === selectedCustomerId);
 
@@ -91,9 +91,9 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         {/* Navigation / Role switch action */}
         <TouchableOpacity
           style={styles.switchRoleBtn}
-          onPress={() => navigation.navigate('RoleSelection')}
+          onPress={() => logout()}
         >
-          <Text style={styles.switchRoleText}>Switch User Account / Log out</Text>
+          <Text style={styles.switchRoleText}>Log Out</Text>
         </TouchableOpacity>
 
         <Text style={styles.footerBuild}>ChitFlow Mobile App · Build v1.0.0 (Expo Go Demo)</Text>

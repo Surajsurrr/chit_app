@@ -6,7 +6,7 @@ import Card from '../../components/Card';
 import { StatusBar } from 'expo-status-bar';
 
 export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { customers, getCustomerStats } = useChitData();
+  const { customers, getCustomerStats, logout } = useChitData();
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredCustomers = customers.filter(
@@ -71,8 +71,8 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
           <Text style={styles.headerTitle}>Customers</Text>
           <Text style={styles.headerSubtitle}>Manage and search member records</Text>
         </View>
-        <TouchableOpacity style={styles.roleBtn} onPress={() => navigation.navigate('RoleSelection')}>
-          <Text style={styles.roleBtnText}>Switch Role</Text>
+        <TouchableOpacity style={styles.roleBtn} onPress={() => logout()}>
+          <Text style={styles.roleBtnText}>Log Out</Text>
         </TouchableOpacity>
       </View>
 

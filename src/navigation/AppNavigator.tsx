@@ -2,11 +2,14 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { ActivityIndicator, View } from 'react-native';
 
 // Constants
 import { COLORS } from '../constants/theme';
+import { useChitData } from '../context/ChitDataContext';
 
 // Common screens
+import LoginScreen from '../screens/common/LoginScreen';
 import RoleSelectionScreen from '../screens/common/RoleSelectionScreen';
 import ReceiptDetailScreen from '../screens/common/ReceiptDetailScreen';
 
@@ -26,6 +29,7 @@ import ProfileScreen from '../screens/customer/ProfileScreen';
 
 // Navigation parameter types
 export type RootStackParamList = {
+  Login: undefined;
   RoleSelection: undefined;
   AdminTabs: undefined;
   CustomerTabs: undefined;
@@ -121,30 +125,52 @@ function CustomerTabNavigator() {
 
 // Root App Navigator
 export const AppNavigator = () => {
+  const { isLoggedIn, currentUserRole, isLoading } = useChitData();
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.primary }}>
+        <ActivityIndicator size="large" color={COLORS.white} />
+      </View>
+    );
+  }
+
   return (
     <Stack.Navigator
-      initialRouteName="RoleSelection"
       screenOptions={{
         headerShown: false,
       }}
     >
-      <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
-      
-      {/* Portals */}
-      <Stack.Screen name="AdminTabs" component={AdminTabNavigator} />
-      <Stack.Screen name="CustomerTabs" component={CustomerTabNavigator} />
-      
-      {/* Shared and overlay sub-flows */}
-      <Stack.Screen name="CustomerDetail" component={CustomerDetailScreen} />
-      <Stack.Screen name="AddCustomer" component={AddCustomerScreen} />
-      
-      <Stack.Screen 
-        name="ReceiptDetail" 
-        component={ReceiptDetailScreen}
-        options={{
-          presentation: 'modal', // slide-up animation on iOS
-        }}
-      />
+      {!isLoggedIn ? (
+        // Auth flow
+        <>
+          <Stack.Screen name="Login" component={LoginScreen} />
+          {/* Optional RoleSelection left for retro compatibility and testing */}
+          <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
+        </>
+      ) : (
+        // Authenticated portals
+        <>
+          {currentUserRole === 'admin' ? (
+            <>
+              <Stack.Screen name="AdminTabs" component={AdminTabNavigator} />
+              <Stack.Screen name="CustomerDetail" component={CustomerDetailScreen} />
+              <Stack.Screen name="AddCustomer" component={AddCustomerScreen} />
+            </>
+          ) : (
+            <Stack.Screen name="CustomerTabs" component={CustomerTabNavigator} />
+          )}
+
+          {/* Shared overlay screen */}
+          <Stack.Screen 
+            name="ReceiptDetail" 
+            component={ReceiptDetailScreen}
+            options={{
+              presentation: 'modal',
+            }}
+          />
+        </>
+      )}
     </Stack.Navigator>
   );
 };

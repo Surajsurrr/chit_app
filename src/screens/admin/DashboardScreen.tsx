@@ -7,7 +7,7 @@ import { formatDateShort } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
 
 export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { getAdminStats, payments, resetData } = useChitData();
+  const { getAdminStats, payments, resetData, logout } = useChitData();
   const stats = getAdminStats();
 
   const recentCollections = payments.slice(0, 5); // top 5 recent payments
@@ -24,8 +24,8 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
           <Text style={styles.headerTitle}>ChitFlow Admin</Text>
           <Text style={styles.headerSubtitle}>Overview of Chit Operations</Text>
         </View>
-        <TouchableOpacity style={styles.roleBtn} onPress={() => navigation.navigate('RoleSelection')}>
-          <Text style={styles.roleBtnText}>Switch Role</Text>
+        <TouchableOpacity style={styles.roleBtn} onPress={() => logout()}>
+          <Text style={styles.roleBtnText}>Log Out</Text>
         </TouchableOpacity>
       </View>
 
