@@ -16,7 +16,7 @@ import FormInput from '../../components/FormInput';
 import Button from '../../components/Button';
 import { StatusBar } from 'expo-status-bar';
 
-export const SchemesScreen: React.FC = () => {
+export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const { schemes, customers, addScheme } = useChitData();
 
   // Create Scheme states
@@ -123,8 +123,13 @@ export const SchemesScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Chit Schemes</Text>
-        <Text style={styles.headerSubtitle}>View and structure investment plans</Text>
+        <View>
+          <Text style={styles.headerTitle}>Chit Schemes</Text>
+          <Text style={styles.headerSubtitle}>View and structure investment plans</Text>
+        </View>
+        <TouchableOpacity style={styles.roleBtn} onPress={() => navigation.navigate('RoleSelection')}>
+          <Text style={styles.roleBtnText}>Switch Role</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.content}>
@@ -257,6 +262,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.xl,
     paddingBottom: SPACING.md,
@@ -268,6 +276,16 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textLight,
+  },
+  roleBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: 8,
+  },
+  roleBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.white,
   },
   content: {
     flex: 1,

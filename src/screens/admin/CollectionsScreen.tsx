@@ -130,8 +130,13 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Collections</Text>
-        <Text style={styles.headerSubtitle}>Monitor schedules and record payments</Text>
+        <View>
+          <Text style={styles.headerTitle}>Collections</Text>
+          <Text style={styles.headerSubtitle}>Monitor schedules and record payments</Text>
+        </View>
+        <TouchableOpacity style={styles.roleBtn} onPress={() => navigation.navigate('RoleSelection')}>
+          <Text style={styles.roleBtnText}>Switch Role</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.content}>
@@ -251,6 +256,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.xl,
     paddingBottom: SPACING.md,
@@ -262,6 +270,16 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textLight,
+  },
+  roleBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: 8,
+  },
+  roleBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.white,
   },
   content: {
     flex: 1,
