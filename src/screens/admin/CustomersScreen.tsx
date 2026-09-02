@@ -3,44 +3,45 @@ import { StyleSheet, Text, View, SafeAreaView, TextInput, FlatList, TouchableOpa
 import { useChitData } from '../../context/ChitDataContext';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
 import Card from '../../components/Card';
-import StatusBadge from '../../components/StatusBadge';
-import { getPaymentStatusInfo, formatFrequency } from '../../utils/dateHelpers';
+import { formatFrequency, formatDateShort } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
 
 export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { customers, getCustomerStats, logout } = useChitData();
+  const { customers, schemes, getCustomerStats, logout } = useChitData();
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'OVERDUE' | 'DUE_TODAY' | 'PAID'>('ALL');
+  const [filterType, setFilterType] = useState<'ALL' | 'ACTIVE' | 'SETTLED'>('ALL');
 
-  const customerDataWithStatus = customers.map((c) => {
+  const customerData = customers.map((c) => {
     const stats = getCustomerStats(c.id);
-    const statusInfo = getPaymentStatusInfo(c.nextPaymentDate, stats.remainingAmount, c.frequency);
+    const scheme = schemes.find((s) => s.id === c.schemeId);
+    const isSettled = stats.remainingAmount === 0;
     return {
       customer: c,
       stats,
-      statusInfo,
+      scheme,
+      isSettled,
     };
   });
 
-  const overdueCount = customerDataWithStatus.filter((item) => item.statusInfo.isOverdue).length;
-  const dueTodayCount = customerDataWithStatus.filter((item) => item.statusInfo.status === 'DUE_TODAY').length;
+  const activeCount = customerData.filter((item) => !item.isSettled).length;
+  const settledCount = customerData.filter((item) => item.isSettled).length;
 
-  const filteredItems = customerDataWithStatus.filter(({ customer, statusInfo }) => {
+  const filteredItems = customerData.filter(({ customer, scheme, isSettled }) => {
+    const query = searchQuery.toLowerCase();
     const matchesSearch =
-      customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      customer.phone.includes(searchQuery);
+      customer.name.toLowerCase().includes(query) ||
+      customer.phone.includes(query) ||
+      (scheme && scheme.name.toLowerCase().includes(query));
 
     if (!matchesSearch) return false;
 
-    if (statusFilter === 'OVERDUE') return statusInfo.isOverdue;
-    if (statusFilter === 'DUE_TODAY') return statusInfo.status === 'DUE_TODAY';
-    if (statusFilter === 'PAID') return statusInfo.status === 'PAID';
+    if (filterType === 'ACTIVE') return !isSettled;
+    if (filterType === 'SETTLED') return isSettled;
     return true;
   });
 
-  const renderCustomerItem = ({ item }: { item: typeof customerDataWithStatus[0] }) => {
-    const { customer, stats, statusInfo } = item;
-    const isOverdue = statusInfo.isOverdue;
+  const renderCustomerItem = ({ item }: { item: typeof customerData[0] }) => {
+    const { customer, stats, scheme, isSettled } = item;
 
     return (
       <TouchableOpacity
@@ -48,70 +49,66 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
         activeOpacity={0.8}
         style={styles.cardWrapper}
       >
-        <Card
-          style={styles.customerCard}
-        >
-          {/* Overdue Alert Bar */}
-          {isOverdue && (
-            <View style={styles.overdueAlertBar}>
-              <Text style={styles.overdueAlertText}>
-                ⚠️ Missed Payment · {statusInfo.statusText}
-              </Text>
-              <Text style={styles.overdueAmountTag}>
-                ₹{customer.collectionAmount.toLocaleString('en-IN')} Due
-              </Text>
-            </View>
-          )}
-
+        <Card style={styles.customerCard}>
+          {/* Top Row: Customer Info + Member Badge */}
           <View style={styles.cardHeader}>
             <View style={styles.customerNameSection}>
               <View style={styles.nameRow}>
-                <Text style={styles.nameText}>
-                  {customer.name}
-                </Text>
-                <StatusBadge status={statusInfo.badgeLabel} />
+                <Text style={styles.nameText}>{customer.name}</Text>
+                <View style={[styles.memberBadge, isSettled ? styles.settledBadge : styles.activeBadge]}>
+                  <Text style={[styles.memberBadgeText, isSettled ? styles.settledBadgeText : styles.activeBadgeText]}>
+                    {isSettled ? '✓ Fully Settled' : 'Active Member'}
+                  </Text>
+                </View>
               </View>
               <Text style={styles.phoneText}>+91 {customer.phone}</Text>
-              <Text style={styles.schemeFrequencyText}>
-                Scheme: ₹{customer.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(customer.frequency)}
+              <Text style={styles.schemeTagText}>
+                {scheme ? scheme.name : 'Chit Scheme'} · {formatFrequency(customer.frequency)}
               </Text>
             </View>
-            <TouchableOpacity
-              style={[styles.collectBtn, isOverdue && styles.overdueCollectBtn]}
-              onPress={() => navigation.navigate('Collections', { customerId: customer.id })}
-            >
-              <Text style={styles.collectBtnText}>
-                {isOverdue ? 'Collect ⚠️' : 'Collect'}
-              </Text>
-            </TouchableOpacity>
+
+            <View style={styles.viewProfileBtn}>
+              <Text style={styles.viewProfileText}>View Profile →</Text>
+            </View>
           </View>
 
           <View style={styles.divider} />
 
+          {/* Financial Overview Row */}
           <View style={styles.financialRow}>
             <View style={styles.finCol}>
-              <Text style={styles.finLabel}>TOTAL GIVEN</Text>
+              <Text style={styles.finLabel}>SCHEME VALUE</Text>
               <Text style={styles.finValue}>₹{customer.amountGiven.toLocaleString('en-IN')}</Text>
             </View>
             <View style={styles.finCol}>
-              <Text style={styles.finLabel}>PAID</Text>
+              <Text style={styles.finLabel}>TOTAL PAID</Text>
               <Text style={[styles.finValue, styles.paidText]}>
                 ₹{stats.paidAmount.toLocaleString('en-IN')}
               </Text>
             </View>
             <View style={styles.finCol}>
               <Text style={styles.finLabel}>REMAINING</Text>
-              <Text style={[styles.finValue, isOverdue ? styles.overdueRemText : styles.remText]}>
+              <Text style={[styles.finValue, styles.remText]}>
                 ₹{stats.remainingAmount.toLocaleString('en-IN')}
               </Text>
             </View>
           </View>
 
-          {/* Next Due Date indicator */}
-          <View style={styles.dueFooterRow}>
-            <Text style={styles.dueFooterLabel}>Next Due Date:</Text>
-            <Text style={[styles.dueFooterDate, isOverdue && styles.overdueDueDateText]}>
-              {statusInfo.formattedDueDate} ({statusInfo.statusText})
+          {/* Progress Bar */}
+          <View style={styles.progressContainer}>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressBar, { width: `${stats.progressPercentage}%` }]} />
+            </View>
+            <Text style={styles.progressPercentageText}>{Math.round(stats.progressPercentage)}% Paid</Text>
+          </View>
+
+          {/* Member Metadata Footer */}
+          <View style={styles.memberFooter}>
+            <Text style={styles.memberFooterText}>
+              Joined: {formatDateShort(customer.startDate)}
+            </Text>
+            <Text style={styles.memberFooterText}>
+              {stats.totalPayments} {stats.totalPayments === 1 ? 'payment' : 'payments'} recorded
             </Text>
           </View>
         </Card>
@@ -125,7 +122,7 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Customers</Text>
-          <Text style={styles.headerSubtitle}>Manage and track member payments</Text>
+          <Text style={styles.headerSubtitle}>Directory of registered members</Text>
         </View>
         <TouchableOpacity style={styles.roleBtn} onPress={() => logout()}>
           <Text style={styles.roleBtnText}>Log Out</Text>
@@ -133,10 +130,11 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
       </View>
 
       <View style={styles.content}>
+        {/* Search Bar */}
         <View style={styles.searchContainer}>
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by name or phone..."
+            placeholder="Search by name, phone or scheme..."
             placeholderTextColor={COLORS.textLight}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -148,55 +146,37 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
         {/* Filter Chips */}
         <View style={styles.filterRow}>
           <TouchableOpacity
-            style={[styles.filterChip, statusFilter === 'ALL' && styles.filterChipActive]}
-            onPress={() => setStatusFilter('ALL')}
+            style={[styles.filterChip, filterType === 'ALL' && styles.filterChipActive]}
+            onPress={() => setFilterType('ALL')}
           >
-            <Text style={[styles.filterChipText, statusFilter === 'ALL' && styles.filterChipTextActive]}>
+            <Text style={[styles.filterChipText, filterType === 'ALL' && styles.filterChipTextActive]}>
               All ({customers.length})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[
-              styles.filterChip,
-              statusFilter === 'OVERDUE' && styles.filterChipOverdueActive,
-              overdueCount > 0 && styles.filterChipOverdueWithCount,
-            ]}
-            onPress={() => setStatusFilter('OVERDUE')}
+            style={[styles.filterChip, filterType === 'ACTIVE' && styles.filterChipActive]}
+            onPress={() => setFilterType('ACTIVE')}
           >
-            <Text
-              style={[
-                styles.filterChipText,
-                overdueCount > 0 && styles.overdueChipLabel,
-                statusFilter === 'OVERDUE' && styles.filterChipTextActive,
-              ]}
-            >
-              ⚠️ Overdue ({overdueCount})
+            <Text style={[styles.filterChipText, filterType === 'ACTIVE' && styles.filterChipTextActive]}>
+              Active ({activeCount})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.filterChip, statusFilter === 'DUE_TODAY' && styles.filterChipActive]}
-            onPress={() => setStatusFilter('DUE_TODAY')}
+            style={[styles.filterChip, filterType === 'SETTLED' && styles.filterChipActive]}
+            onPress={() => setFilterType('SETTLED')}
           >
-            <Text style={[styles.filterChipText, statusFilter === 'DUE_TODAY' && styles.filterChipTextActive]}>
-              Due Today ({dueTodayCount})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.filterChip, statusFilter === 'PAID' && styles.filterChipActive]}
-            onPress={() => setStatusFilter('PAID')}
-          >
-            <Text style={[styles.filterChipText, statusFilter === 'PAID' && styles.filterChipTextActive]}>
-              Settled
+            <Text style={[styles.filterChipText, filterType === 'SETTLED' && styles.filterChipTextActive]}>
+              Settled ({settledCount})
             </Text>
           </TouchableOpacity>
         </View>
 
+        {/* Customer Directory List */}
         {filteredItems.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No customers found in this filter.</Text>
+            <Text style={styles.emptyText}>No members found.</Text>
           </View>
         ) : (
           <FlatList
@@ -209,6 +189,7 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
         )}
       </View>
 
+      {/* Floating Add Customer Button */}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => navigation.navigate('AddCustomer')}
@@ -281,7 +262,7 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   filterChip: {
-    paddingHorizontal: SPACING.sm + 4,
+    paddingHorizontal: SPACING.md,
     paddingVertical: 6,
     borderRadius: 16,
     backgroundColor: '#F1F5F9',
@@ -292,14 +273,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.secondary,
     borderColor: COLORS.secondary,
   },
-  filterChipOverdueWithCount: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#FCA5A5',
-  },
-  filterChipOverdueActive: {
-    backgroundColor: '#DC2626',
-    borderColor: '#DC2626',
-  },
   filterChipText: {
     ...TYPOGRAPHY.captionBold,
     fontSize: 11,
@@ -307,10 +280,6 @@ const styles = StyleSheet.create({
   },
   filterChipTextActive: {
     color: COLORS.white,
-  },
-  overdueChipLabel: {
-    color: '#DC2626',
-    fontWeight: '700',
   },
   listContent: {
     padding: SPACING.md,
@@ -321,35 +290,8 @@ const styles = StyleSheet.create({
   },
   customerCard: {
     padding: SPACING.md,
-  },
-  overdueCustomerCard: {
-    backgroundColor: '#FFF5F5',
-    borderLeftWidth: 5,
-    borderLeftColor: '#EF4444',
     borderWidth: 1,
-    borderColor: '#FCA5A5',
-  },
-  overdueAlertBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginBottom: SPACING.sm,
-    borderWidth: 1,
-    borderColor: '#FECACA',
-  },
-  overdueAlertText: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#B91C1C',
-    fontSize: 11,
-  },
-  overdueAmountTag: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#DC2626',
-    fontSize: 11,
+    borderColor: COLORS.border,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -372,32 +314,57 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.text,
   },
-  overdueNameText: {
-    color: '#991B1B',
-  },
   phoneText: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textMuted,
   },
-  schemeFrequencyText: {
+  schemeTagText: {
     ...TYPOGRAPHY.captionBold,
     color: COLORS.secondary,
     fontSize: 11,
     marginTop: 2,
   },
-  collectBtn: {
-    backgroundColor: COLORS.secondary,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm - 2,
+  memberBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  memberBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 10,
+  },
+  activeBadge: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  activeBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#2563EB',
+    fontSize: 10,
+  },
+  settledBadge: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  settledBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#059669',
+    fontSize: 10,
+  },
+  viewProfileBtn: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: 6,
     borderRadius: 8,
   },
-  overdueCollectBtn: {
-    backgroundColor: '#DC2626',
-    ...SHADOWS.sm,
-  },
-  collectBtnText: {
+  viewProfileText: {
     ...TYPOGRAPHY.captionBold,
-    color: COLORS.white,
+    color: COLORS.textMuted,
+    fontSize: 10,
   },
   divider: {
     height: 1,
@@ -427,32 +394,44 @@ const styles = StyleSheet.create({
   remText: {
     color: COLORS.text,
   },
-  overdueRemText: {
-    color: '#DC2626',
-    fontWeight: '700',
-  },
-  dueFooterRow: {
+  progressContainer: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  progressTrack: {
+    flex: 1,
+    height: 6,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: COLORS.secondary,
+    borderRadius: 3,
+  },
+  progressPercentageText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textMuted,
+    fontSize: 10,
+    width: 55,
+    textAlign: 'right',
+  },
+  memberFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: SPACING.sm,
     paddingTop: SPACING.xs + 2,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
   },
-  dueFooterLabel: {
+  memberFooterText: {
     ...TYPOGRAPHY.caption,
     fontSize: 11,
     color: COLORS.textMuted,
-    marginRight: 4,
-  },
-  dueFooterDate: {
-    ...TYPOGRAPHY.captionBold,
-    fontSize: 11,
-    color: COLORS.text,
-  },
-  overdueDueDateText: {
-    color: '#DC2626',
-    fontWeight: '700',
   },
   emptyContainer: {
     flex: 1,
