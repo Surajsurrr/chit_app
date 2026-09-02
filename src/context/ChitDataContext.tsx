@@ -155,7 +155,6 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               ...s,
               interestAmount: interest,
               payoutAmount: payout,
-              description: s.description ?? `Total Scheme Value is ₹${s.totalAmount.toLocaleString('en-IN')}. An interest deduction of ₹${interest.toLocaleString('en-IN')} is applied, giving a net customer payout of ₹${payout.toLocaleString('en-IN')}.`,
             };
           });
           setSchemes(parsedSchemes);
