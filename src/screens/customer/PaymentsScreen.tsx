@@ -14,7 +14,7 @@ import Card from '../../components/Card';
 import Button from '../../components/Button';
 import FormInput from '../../components/FormInput';
 import TransactionRow from '../../components/TransactionRow';
-import { formatDateLong } from '../../utils/dateHelpers';
+import { formatDateLong, getPaymentStatusInfo, formatFrequency } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
 
 export const PaymentsScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
@@ -44,6 +44,8 @@ export const PaymentsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
   const stats = getCustomerStats(customer.id);
   const customerPayments = payments.filter((p) => p.customerId === customer.id);
+  const statusInfo = getPaymentStatusInfo(customer.nextPaymentDate, stats.remainingAmount, customer.frequency);
+  const isOverdue = statusInfo.isOverdue;
 
   const handleOpenPay = () => {
     setPayAmount(customer.collectionAmount.toString());
@@ -81,16 +83,29 @@ export const PaymentsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         {/* Due Card */}
         {stats.remainingAmount > 0 ? (
           <Card style={styles.dueCard}>
+            {isOverdue && (
+              <View style={styles.overdueHeaderBadge}>
+                <Text style={styles.overdueHeaderBadgeText}>⚠️ PAYMENT OVERDUE</Text>
+              </View>
+            )}
             <View style={styles.dueRow}>
               <View style={styles.dueInfo}>
-                <Text style={styles.dueLabel}>UPCOMING PAYMENT DUE</Text>
-                <Text style={styles.dueDate}>{formatDateLong(customer.nextPaymentDate)}</Text>
-                <Text style={styles.dueAmount}>
-                  ₹{customer.collectionAmount.toLocaleString('en-IN')} · Every {customer.frequency.replace(/every_/g, '').replace(/_/g, ' ')}
+                <Text style={[styles.dueLabel, isOverdue && styles.overdueDueLabel]}>
+                  {isOverdue ? 'MISSED PAYMENT DUE' : 'UPCOMING PAYMENT DUE'}
+                </Text>
+                <Text style={[styles.dueDate, isOverdue && styles.overdueDueDate]}>
+                  {formatDateLong(customer.nextPaymentDate)}
+                </Text>
+                <Text style={[styles.dueAmount, isOverdue && styles.overdueDueAmount]}>
+                  ₹{customer.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(customer.frequency)} {isOverdue ? `(${statusInfo.statusText})` : ''}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.payNowBtn} onPress={handleOpenPay} activeOpacity={0.8}>
-                <Text style={styles.payNowBtnText}>Pay Now</Text>
+              <TouchableOpacity
+                style={[styles.payNowBtn, isOverdue && styles.overduePayNowBtn]}
+                onPress={handleOpenPay}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.payNowBtnText}>{isOverdue ? 'Pay Dues ⚠️' : 'Pay Now'}</Text>
               </TouchableOpacity>
             </View>
           </Card>
@@ -229,6 +244,28 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     marginBottom: SPACING.lg,
   },
+  overdueDueCard: {
+    backgroundColor: '#FFF5F5',
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+    borderLeftWidth: 6,
+  },
+  overdueHeaderBadge: {
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginBottom: SPACING.sm,
+    alignSelf: 'flex-start',
+  },
+  overdueHeaderBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#DC2626',
+    fontSize: 10,
+    letterSpacing: 0.5,
+  },
   dueRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -243,22 +280,35 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: 9,
   },
+  overdueDueLabel: {
+    color: '#B91C1C',
+  },
   dueDate: {
     ...TYPOGRAPHY.bodyLarge,
     fontWeight: '700',
     color: COLORS.primary,
     marginTop: 2,
   },
+  overdueDueDate: {
+    color: '#991B1B',
+  },
   dueAmount: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textMuted,
     marginTop: 2,
+  },
+  overdueDueAmount: {
+    color: '#DC2626',
+    fontWeight: '600',
   },
   payNowBtn: {
     backgroundColor: COLORS.secondary,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderRadius: 8,
+  },
+  overduePayNowBtn: {
+    backgroundColor: '#DC2626',
   },
   payNowBtnText: {
     ...TYPOGRAPHY.captionBold,

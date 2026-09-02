@@ -14,7 +14,7 @@ import Card from '../../components/Card';
 import Button from '../../components/Button';
 import FormInput from '../../components/FormInput';
 import TransactionRow from '../../components/TransactionRow';
-import { formatDateLong, formatDateShort } from '../../utils/dateHelpers';
+import { formatDateLong, formatDateShort, getPaymentStatusInfo, formatFrequency } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
 
 export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
@@ -49,6 +49,8 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const stats = getCustomerStats(customer.id);
   const customerPayments = payments.filter((p) => p.customerId === customer.id);
   const recentPayments = customerPayments.slice(0, 3); // top 3
+  const statusInfo = getPaymentStatusInfo(customer.nextPaymentDate, stats.remainingAmount, customer.frequency);
+  const isOverdue = statusInfo.isOverdue;
 
   const handleOpenPay = () => {
     setPayAmount(customer.collectionAmount.toString());
@@ -128,15 +130,24 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         {/* Next Payment Card */}
         {stats.remainingAmount > 0 ? (
           <Card style={styles.nextPayCard}>
-            <Text style={styles.nextPayLabel}>NEXT PAYMENT DUE</Text>
-            <Text style={styles.nextPayDate}>{formatDateLong(customer.nextPaymentDate)}</Text>
-            <Text style={styles.nextPayDetails}>
-              ₹{customer.collectionAmount.toLocaleString('en-IN')} · Every {customer.frequency.replace(/every_/g, '').replace(/_/g, ' ')}
+            {isOverdue && (
+              <View style={styles.overdueHeaderBadge}>
+                <Text style={styles.overdueHeaderBadgeText}>⚠️ PAYMENT OVERDUE</Text>
+              </View>
+            )}
+            <Text style={[styles.nextPayLabel, isOverdue && styles.overdueNextPayLabel]}>
+              {isOverdue ? 'MISSED INSTALLMENT DUE' : 'NEXT PAYMENT DUE'}
+            </Text>
+            <Text style={[styles.nextPayDate, isOverdue && styles.overdueNextPayDate]}>
+              {formatDateLong(customer.nextPaymentDate)}
+            </Text>
+            <Text style={[styles.nextPayDetails, isOverdue && styles.overdueNextPayDetails]}>
+              ₹{customer.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(customer.frequency)} {isOverdue ? `(${statusInfo.statusText})` : ''}
             </Text>
             <Button
-              title="Make Payment"
+              title={isOverdue ? `Pay Overdue Dues (₹${customer.collectionAmount.toLocaleString('en-IN')}) ⚠️` : 'Make Payment'}
               onPress={handleOpenPay}
-              style={styles.payBtn}
+              style={[styles.payBtn, isOverdue && styles.overduePayBtn]}
               size="large"
             />
           </Card>
@@ -163,7 +174,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           <View style={styles.schemeRow}>
             <Text style={styles.schemeLabel}>Collection terms</Text>
             <Text style={styles.schemeVal}>
-              ₹{customer.collectionAmount.toLocaleString('en-IN')} · Every {customer.frequency.replace(/every_/g, '').replace(/_/g, ' ')}
+              ₹{customer.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(customer.frequency)}
             </Text>
           </View>
         </Card>
@@ -369,15 +380,42 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.lg,
     alignItems: 'center',
   },
+  overdueNextPayCard: {
+    backgroundColor: '#FFF5F5',
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+    borderLeftWidth: 6,
+  },
+  overdueHeaderBadge: {
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom: SPACING.sm,
+  },
+  overdueHeaderBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#DC2626',
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
   nextPayLabel: {
     ...TYPOGRAPHY.captionBold,
     color: COLORS.textMuted,
     letterSpacing: 0.5,
   },
+  overdueNextPayLabel: {
+    color: '#B91C1C',
+  },
   nextPayDate: {
     ...TYPOGRAPHY.h2,
     color: COLORS.primary,
     marginTop: SPACING.xs,
+  },
+  overdueNextPayDate: {
+    color: '#991B1B',
   },
   nextPayDetails: {
     ...TYPOGRAPHY.bodyMedium,
@@ -385,8 +423,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: SPACING.md,
   },
+  overdueNextPayDetails: {
+    color: '#DC2626',
+    fontWeight: '600',
+  },
   payBtn: {
     width: '100%',
+  },
+  overduePayBtn: {
+    backgroundColor: '#DC2626',
   },
   settledCard: {
     backgroundColor: COLORS.successLight,
