@@ -54,6 +54,10 @@ interface ChitDataContextType {
   selectCustomer: (id: string) => void;
   addCustomer: (customer: Omit<Customer, 'id' | 'nextPaymentDate'>) => void;
   addScheme: (scheme: Omit<Scheme, 'id' | 'startDate' | 'status'>) => void;
+  updateScheme: (
+    schemeId: string,
+    updatedScheme: Partial<Omit<Scheme, 'id' | 'startDate' | 'status'>>
+  ) => void;
   recordPayment: (
     customerId: string,
     amount: number,
@@ -70,7 +74,7 @@ interface ChitDataContextType {
     name: string,
     phone: string,
     pin: string,
-    schemeId: string
+    schemeId?: string
   ) => { success: boolean; error?: string };
   
   // Derived state helper methods
@@ -200,8 +204,10 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const switchRole = async (role: UserRole) => {
     setCurrentRoleState(role);
     setCurrentUserRole(role);
+    setIsLoggedIn(true);
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.ROLE, role);
+      await AsyncStorage.setItem(STORAGE_KEYS.IS_LOGGED_IN, 'true');
     } catch (e) {
       console.error(e);
     }
@@ -249,6 +255,25 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       await AsyncStorage.setItem(STORAGE_KEYS.SCHEMES, JSON.stringify(updated));
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const updateScheme = async (
+    schemeId: string,
+    updatedScheme: Partial<Omit<Scheme, 'id' | 'startDate' | 'status'>>
+  ) => {
+    const updatedSchemes = schemes.map((s) => {
+      if (s.id === schemeId) {
+        return { ...s, ...updatedScheme };
+      }
+      return s;
+    });
+
+    setSchemes(updatedSchemes);
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.SCHEMES, JSON.stringify(updatedSchemes));
+    } catch (e) {
+      console.error('Failed to save updated scheme', e);
     }
   };
 
@@ -402,25 +427,24 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return { success: true };
   };
 
-  const registerCustomer = (name: string, phone: string, pin: string, schemeId: string) => {
+  const registerCustomer = (name: string, phone: string, pin: string, schemeId?: string) => {
     const exists = customers.some((c) => c.phone === phone.trim());
     if (exists) {
       return { success: false, error: 'Phone number is already registered' };
     }
 
-    const scheme = schemes.find((s) => s.id === schemeId);
-    if (!scheme) {
-      return { success: false, error: 'Selected chit scheme is invalid' };
-    }
+    const selectedScheme = schemeId 
+      ? schemes.find((s) => s.id === schemeId) 
+      : (schemes.length > 0 ? schemes[0] : null);
 
     addCustomer({
       name: name.trim(),
       phone: phone.trim(),
       pin: pin.trim(),
-      schemeId,
-      amountGiven: scheme.totalAmount,
-      collectionAmount: scheme.collectionAmount,
-      frequency: scheme.frequency,
+      schemeId: selectedScheme ? selectedScheme.id : 'scheme-1',
+      amountGiven: selectedScheme ? selectedScheme.totalAmount : 50000,
+      collectionAmount: selectedScheme ? selectedScheme.collectionAmount : 1000,
+      frequency: selectedScheme ? selectedScheme.frequency : 'daily',
       startDate: new Date().toISOString(),
     });
 
@@ -497,6 +521,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         selectCustomer,
         addCustomer,
         addScheme,
+        updateScheme,
         recordPayment,
         resetData,
         loginAsAdmin,

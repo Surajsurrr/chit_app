@@ -135,42 +135,33 @@ export const AppNavigator = () => {
     );
   }
 
+  const initialRoute = !isLoggedIn
+    ? 'Login'
+    : currentUserRole === 'customer'
+    ? 'CustomerTabs'
+    : 'AdminTabs';
+
   return (
     <Stack.Navigator
+      key={isLoggedIn ? (currentUserRole || 'auth') : 'guest'}
+      initialRouteName={initialRoute}
       screenOptions={{
         headerShown: false,
       }}
     >
-      {!isLoggedIn ? (
-        // Auth flow
-        <>
-          <Stack.Screen name="Login" component={LoginScreen} />
-          {/* Optional RoleSelection left for retro compatibility and testing */}
-          <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
-        </>
-      ) : (
-        // Authenticated portals
-        <>
-          {currentUserRole === 'admin' ? (
-            <>
-              <Stack.Screen name="AdminTabs" component={AdminTabNavigator} />
-              <Stack.Screen name="CustomerDetail" component={CustomerDetailScreen} />
-              <Stack.Screen name="AddCustomer" component={AddCustomerScreen} />
-            </>
-          ) : (
-            <Stack.Screen name="CustomerTabs" component={CustomerTabNavigator} />
-          )}
-
-          {/* Shared overlay screen */}
-          <Stack.Screen 
-            name="ReceiptDetail" 
-            component={ReceiptDetailScreen}
-            options={{
-              presentation: 'modal',
-            }}
-          />
-        </>
-      )}
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
+      <Stack.Screen name="AdminTabs" component={AdminTabNavigator} />
+      <Stack.Screen name="CustomerTabs" component={CustomerTabNavigator} />
+      <Stack.Screen name="CustomerDetail" component={CustomerDetailScreen} />
+      <Stack.Screen name="AddCustomer" component={AddCustomerScreen} />
+      <Stack.Screen 
+        name="ReceiptDetail" 
+        component={ReceiptDetailScreen}
+        options={{
+          presentation: 'modal',
+        }}
+      />
     </Stack.Navigator>
   );
 };

@@ -25,6 +25,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     schemes,
     getCustomerStats,
     recordPayment,
+    logout,
   } = useChitData();
 
   const customer = customers.find((c) => c.id === selectedCustomerId);
@@ -39,7 +40,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     return (
       <SafeAreaView style={styles.errorContainer}>
         <Text style={styles.errorText}>Customer account not selected.</Text>
-        <Button title="Select Role" onPress={() => navigation.navigate('RoleSelection')} />
+        <Button title="Log Out" onPress={() => logout()} />
       </SafeAreaView>
     );
   }
@@ -92,7 +93,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         </View>
         <TouchableOpacity 
           style={styles.avatar}
-          onPress={() => navigation.navigate('RoleSelection')}
+          onPress={() => navigation.navigate('Profile')}
         >
           <Text style={styles.avatarText}>{nameInitials}</Text>
         </TouchableOpacity>

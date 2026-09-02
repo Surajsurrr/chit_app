@@ -15,15 +15,18 @@ import Card from '../../components/Card';
 import FormInput from '../../components/FormInput';
 import Button from '../../components/Button';
 import { StatusBar } from 'expo-status-bar';
+import { Scheme } from '../../data/mockData';
 
 export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { schemes, customers, addScheme, logout } = useChitData();
+  const { schemes, customers, addScheme, updateScheme, logout } = useChitData();
 
-  // Create Scheme states
+  // Create / Edit Scheme states
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [editingSchemeId, setEditingSchemeId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [totalAmount, setTotalAmount] = useState('');
   const [collectionAmount, setCollectionAmount] = useState('');
+  const [interestAmount, setInterestAmount] = useState('');
   const [duration, setDuration] = useState('');
   const [frequency, setFrequency] = useState<'daily' | 'every_3_days' | 'weekly' | 'monthly'>('daily');
   const [formError, setFormError] = useState('');
@@ -32,14 +35,39 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     return customers.filter((c) => c.schemeId === schemeId).length;
   };
 
-  const handleCreateScheme = () => {
+  const handleOpenCreateModal = () => {
+    setEditingSchemeId(null);
+    setName('');
+    setTotalAmount('');
+    setCollectionAmount('');
+    setInterestAmount('');
+    setDuration('');
+    setFrequency('daily');
+    setFormError('');
+    setIsModalVisible(true);
+  };
+
+  const handleOpenEditModal = (scheme: Scheme) => {
+    setEditingSchemeId(scheme.id);
+    setName(scheme.name);
+    setTotalAmount(scheme.totalAmount.toString());
+    setCollectionAmount(scheme.collectionAmount.toString());
+    setInterestAmount(scheme.interestAmount ? scheme.interestAmount.toString() : '0');
+    setDuration(scheme.durationWeeksOrMonths.toString());
+    setFrequency(scheme.frequency);
+    setFormError('');
+    setIsModalVisible(true);
+  };
+
+  const handleSaveScheme = () => {
     if (!name.trim() || !totalAmount || !collectionAmount || !duration) {
-      setFormError('All fields are required');
+      setFormError('All required fields must be filled');
       return;
     }
 
     const total = parseFloat(totalAmount);
     const collection = parseFloat(collectionAmount);
+    const parsedInterest = interestAmount ? parseFloat(interestAmount) : 0;
     const dur = parseInt(duration, 10);
 
     if (isNaN(total) || total <= 0) {
@@ -54,30 +82,50 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
       setFormError('Collection amount cannot exceed total amount');
       return;
     }
+    if (isNaN(parsedInterest) || parsedInterest < 0) {
+      setFormError('Interest amount must be 0 or a positive number');
+      return;
+    }
     if (isNaN(dur) || dur <= 0) {
       setFormError('Duration must be a positive number');
       return;
     }
 
-    addScheme({
-      name: name.trim(),
-      totalAmount: total,
-      collectionAmount: collection,
-      frequency,
-      durationWeeksOrMonths: dur,
-    });
+    if (editingSchemeId) {
+      // Update existing scheme
+      updateScheme(editingSchemeId, {
+        name: name.trim(),
+        totalAmount: total,
+        collectionAmount: collection,
+        interestAmount: parsedInterest,
+        frequency,
+        durationWeeksOrMonths: dur,
+      });
+    } else {
+      // Add new scheme
+      addScheme({
+        name: name.trim(),
+        totalAmount: total,
+        collectionAmount: collection,
+        interestAmount: parsedInterest,
+        frequency,
+        durationWeeksOrMonths: dur,
+      });
+    }
 
     // Reset and close
+    setEditingSchemeId(null);
     setName('');
     setTotalAmount('');
     setCollectionAmount('');
+    setInterestAmount('');
     setDuration('');
     setFrequency('daily');
     setFormError('');
     setIsModalVisible(false);
   };
 
-  const renderSchemeItem = ({ item }: { item: typeof schemes[0] }) => {
+  const renderSchemeItem = ({ item }: { item: Scheme }) => {
     const memberCount = getCustomerCount(item.id);
 
     return (
@@ -90,8 +138,18 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
               <Text style={styles.statusText}>Active</Text>
             </View>
           </View>
-          <View style={styles.memberBadge}>
-            <Text style={styles.memberBadgeText}>{memberCount} {memberCount === 1 ? 'member' : 'members'}</Text>
+
+          <View style={styles.cardHeaderRight}>
+            <View style={styles.memberBadge}>
+              <Text style={styles.memberBadgeText}>{memberCount} {memberCount === 1 ? 'member' : 'members'}</Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.editBtn} 
+              onPress={() => handleOpenEditModal(item)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.editBtnText}>✏️ Edit Scheme</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -105,6 +163,12 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           <View style={styles.gridCell}>
             <Text style={styles.detailLabel}>COLLECTION</Text>
             <Text style={styles.detailValue}>₹{item.collectionAmount.toLocaleString('en-IN')}</Text>
+          </View>
+          <View style={styles.gridCell}>
+            <Text style={styles.detailLabel}>INTEREST (EXTRA)</Text>
+            <Text style={[styles.detailValue, { color: COLORS.secondary }]}>
+              ₹{(item.interestAmount || 0).toLocaleString('en-IN')}
+            </Text>
           </View>
           <View style={styles.gridCell}>
             <Text style={styles.detailLabel}>FREQUENCY</Text>
@@ -125,7 +189,7 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Chit Schemes</Text>
-          <Text style={styles.headerSubtitle}>View and structure investment plans</Text>
+          <Text style={styles.headerSubtitle}>Manage & update interest plans</Text>
         </View>
         <TouchableOpacity style={styles.roleBtn} onPress={() => logout()}>
           <Text style={styles.roleBtnText}>Log Out</Text>
@@ -151,13 +215,13 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
       {/* Floating button to create scheme */}
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => setIsModalVisible(true)}
+        onPress={handleOpenCreateModal}
         activeOpacity={0.85}
       >
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
 
-      {/* Create Scheme Modal */}
+      {/* Create / Edit Scheme Modal */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -167,7 +231,9 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Create Chit Scheme</Text>
+              <Text style={styles.modalTitle}>
+                {editingSchemeId ? 'Edit Chit Scheme' : 'Create Chit Scheme'}
+              </Text>
               <TouchableOpacity onPress={() => setIsModalVisible(false)} style={styles.closeBtn}>
                 <Text style={styles.closeBtnText}>✕</Text>
               </TouchableOpacity>
@@ -209,6 +275,17 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
               />
 
               <FormInput
+                label="Scheme Interest Amount (₹)"
+                placeholder="e.g. 2500"
+                value={interestAmount}
+                onChangeText={(val) => {
+                  setInterestAmount(val);
+                  setFormError('');
+                }}
+                keyboardType="numeric"
+              />
+
+              <FormInput
                 label="Duration (Number of Installments)"
                 placeholder="e.g. 50"
                 value={duration}
@@ -243,8 +320,8 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
               </View>
 
               <Button
-                title="Create Scheme"
-                onPress={handleCreateScheme}
+                title={editingSchemeId ? 'Save Scheme Changes' : 'Create Scheme'}
+                onPress={handleSaveScheme}
                 style={styles.modalSubmitBtn}
                 size="large"
               />
@@ -308,6 +385,10 @@ const styles = StyleSheet.create({
   schemeTitleBlock: {
     flex: 1,
   },
+  cardHeaderRight: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
   schemeName: {
     ...TYPOGRAPHY.bodyLarge,
     fontWeight: '700',
@@ -339,6 +420,19 @@ const styles = StyleSheet.create({
   memberBadgeText: {
     ...TYPOGRAPHY.captionBold,
     color: COLORS.secondary,
+    fontSize: 10,
+  },
+  editBtn: {
+    backgroundColor: COLORS.primaryLight + '15',
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.primaryLight + '30',
+  },
+  editBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.primary,
     fontSize: 10,
   },
   divider: {

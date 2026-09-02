@@ -18,7 +18,7 @@ import Card from '../../components/Card';
 import { StatusBar } from 'expo-status-bar';
 
 export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { loginAsAdmin, loginAsCustomer, registerAdmin, registerCustomer, schemes } = useChitData();
+  const { loginAsAdmin, loginAsCustomer, registerAdmin, registerCustomer } = useChitData();
 
   // Mode tabs: 'signin' or 'signup'
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
@@ -41,7 +41,6 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [regCustPhone, setRegCustPhone] = useState('');
   const [regCustPin, setRegCustPin] = useState('');
   const [regCustConfirm, setRegCustConfirm] = useState('');
-  const [regSelectedSchemeId, setRegSelectedSchemeId] = useState('');
 
   // General state handlers
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -58,7 +57,6 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     setRegCustPhone('');
     setRegCustPin('');
     setRegCustConfirm('');
-    setRegSelectedSchemeId('');
     setErrors({});
   };
 
@@ -80,7 +78,6 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       setLoading(false);
       if (result.success) {
         resetForm();
-        navigation.replace('AdminTabs');
       } else {
         setErrors({ login: result.error || 'Authentication failed' });
       }
@@ -115,7 +112,6 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       setLoading(false);
       if (result.success) {
         resetForm();
-        navigation.replace('CustomerTabs');
       } else {
         setErrors({ login: result.error || 'Authentication failed' });
       }
@@ -186,10 +182,6 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       newErrors.regCustConfirm = 'PINs do not match';
     }
 
-    if (!regSelectedSchemeId) {
-      newErrors.regScheme = 'Please select a chit scheme';
-    }
-
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
@@ -200,8 +192,7 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       const result = registerCustomer(
         regCustName.trim(),
         regCustPhone.trim(),
-        regCustPin,
-        regSelectedSchemeId
+        regCustPin
       );
       setLoading(false);
       if (result.success) {
@@ -494,36 +485,6 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                     secureTextEntry={true}
                     error={errors.regCustConfirm}
                   />
-
-                  {/* Scheme selector */}
-                  <Text style={styles.schemeSectionLabel}>Select Chit Scheme</Text>
-                  {errors.regScheme ? <Text style={styles.schemeErrorText}>{errors.regScheme}</Text> : null}
-                  <View style={styles.schemeSelectContainer}>
-                    {schemes.map((scheme) => {
-                      const isSelected = regSelectedSchemeId === scheme.id;
-                      return (
-                        <TouchableOpacity
-                          key={scheme.id}
-                          style={[
-                            styles.schemeCard,
-                            isSelected ? styles.schemeCardSelected : null,
-                          ]}
-                          onPress={() => {
-                            setRegSelectedSchemeId(scheme.id);
-                            setErrors({});
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.schemeName, isSelected ? styles.schemeTextSelected : null]}>
-                            {scheme.name}
-                          </Text>
-                          <Text style={[styles.schemeSub, isSelected ? styles.schemeSubSelected : null]}>
-                            ₹{scheme.totalAmount.toLocaleString('en-IN')} · Installments: ₹{scheme.collectionAmount.toLocaleString('en-IN')}/{scheme.frequency}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
 
                   <Button
                     title="Register Member Account"

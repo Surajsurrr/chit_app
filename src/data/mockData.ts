@@ -31,6 +31,7 @@ export interface Scheme {
   collectionAmount: number;
   frequency: 'daily' | 'every_3_days' | 'weekly' | 'monthly';
   durationWeeksOrMonths: number;
+  interestAmount?: number;
   startDate: string;
   status: 'active' | 'completed';
 }
@@ -57,6 +58,7 @@ export const INITIAL_SCHEMES: Scheme[] = [
     collectionAmount: 1000,
     frequency: 'every_3_days',
     durationWeeksOrMonths: 50, // 50 installments
+    interestAmount: 2500,
     startDate: '2026-05-15T00:00:00.000Z',
     status: 'active',
   },
@@ -67,6 +69,7 @@ export const INITIAL_SCHEMES: Scheme[] = [
     collectionAmount: 500,
     frequency: 'daily',
     durationWeeksOrMonths: 50, // 50 installments
+    interestAmount: 1250,
     startDate: '2026-08-05T00:00:00.000Z',
     status: 'active',
   },
@@ -77,6 +80,7 @@ export const INITIAL_SCHEMES: Scheme[] = [
     collectionAmount: 2000,
     frequency: 'weekly',
     durationWeeksOrMonths: 50, // 50 installments
+    interestAmount: 5000,
     startDate: '2026-04-10T00:00:00.000Z',
     status: 'active',
   },
@@ -87,6 +91,7 @@ export const INITIAL_SCHEMES: Scheme[] = [
     collectionAmount: 5000,
     frequency: 'monthly',
     durationWeeksOrMonths: 40, // 40 installments
+    interestAmount: 10000,
     startDate: '2026-01-15T00:00:00.000Z',
     status: 'active',
   },

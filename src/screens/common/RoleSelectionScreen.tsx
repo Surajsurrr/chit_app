@@ -10,13 +10,11 @@ export const RoleSelectionScreen: React.FC<{ navigation: any }> = ({ navigation 
 
   const handleAdminSelect = () => {
     switchRole('admin');
-    navigation.navigate('AdminTabs');
   };
 
   const handleCustomerSelect = (customerId: string) => {
     selectCustomer(customerId);
     switchRole('customer');
-    navigation.navigate('CustomerTabs');
   };
 
   return (
