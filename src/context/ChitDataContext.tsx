@@ -148,7 +148,17 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (savedCustomers && savedPayments && savedSchemes && savedReceipts) {
           setCustomers(JSON.parse(savedCustomers));
           setPayments(JSON.parse(savedPayments));
-          setSchemes(JSON.parse(savedSchemes));
+          const parsedSchemes: Scheme[] = JSON.parse(savedSchemes).map((s: Scheme) => {
+            const interest = s.interestAmount ?? 0;
+            const payout = s.payoutAmount ?? (s.totalAmount - interest);
+            return {
+              ...s,
+              interestAmount: interest,
+              payoutAmount: payout,
+              description: s.description ?? `Total Scheme Value is ₹${s.totalAmount.toLocaleString('en-IN')}. An interest deduction of ₹${interest.toLocaleString('en-IN')} is applied, giving a net customer payout of ₹${payout.toLocaleString('en-IN')}.`,
+            };
+          });
+          setSchemes(parsedSchemes);
           setReceipts(JSON.parse(savedReceipts));
         } else {
           // No saved data, load initial mocks and save them

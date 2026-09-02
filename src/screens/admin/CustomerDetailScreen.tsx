@@ -144,11 +144,27 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
         </Card>
 
         {/* Scheme & Payment Terms Card */}
-        <Text style={styles.sectionTitle}>Collection Scheme Details</Text>
+        <Text style={styles.sectionTitle}>Collection Scheme & Payout Details</Text>
         <Card style={styles.infoCard}>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Chit Scheme</Text>
             <Text style={styles.infoValue}>{scheme ? scheme.name : 'Not Assigned'}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Total Scheme Value</Text>
+            <Text style={styles.infoValue}>₹{customer.amountGiven.toLocaleString('en-IN')}</Text>
+          </View>
+          {scheme && (scheme.interestAmount || 0) > 0 ? (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Upfront Interest Deducted</Text>
+              <Text style={[styles.infoValue, { color: '#D97706' }]}>- ₹{scheme.interestAmount.toLocaleString('en-IN')}</Text>
+            </View>
+          ) : null}
+          <View style={[styles.infoRow, styles.payoutRow]}>
+            <Text style={styles.payoutRowLabel}>Net Disbursed Payout (Received)</Text>
+            <Text style={styles.payoutRowValue}>
+              ₹{(scheme?.payoutAmount ?? (customer.amountGiven - (scheme?.interestAmount ?? 0))).toLocaleString('en-IN')}
+            </Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Installment Amount</Text>
@@ -168,6 +184,15 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
             <Text style={styles.infoLabel}>Next Collection Due</Text>
             <Text style={[styles.infoValue, isOverdue ? styles.overdueDueDateVal : styles.dueDateVal]}>
               {formatDateLong(customer.nextPaymentDate)} {isOverdue ? `(${statusInfo.statusText})` : ''}
+            </Text>
+          </View>
+
+          {/* Scheme description / explanation note */}
+          <View style={styles.explanationBox}>
+            <Text style={styles.explanationIcon}>ℹ️</Text>
+            <Text style={styles.explanationText}>
+              {scheme?.description ||
+                `Customer receives net ₹${(scheme?.payoutAmount ?? (customer.amountGiven - (scheme?.interestAmount ?? 0))).toLocaleString('en-IN')} upfront after ₹${(scheme?.interestAmount ?? 0).toLocaleString('en-IN')} interest deduction on the ₹${customer.amountGiven.toLocaleString('en-IN')} scheme value.`}
             </Text>
           </View>
 
@@ -368,6 +393,45 @@ const styles = StyleSheet.create({
   overdueDueDateVal: {
     color: '#DC2626',
     fontWeight: '700',
+  },
+  payoutRow: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: SPACING.sm,
+    borderRadius: 8,
+    marginVertical: 4,
+    borderBottomWidth: 0,
+  },
+  payoutRowLabel: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#047857',
+    fontSize: 13,
+  },
+  payoutRowValue: {
+    ...TYPOGRAPHY.amountMedium,
+    color: '#059669',
+    fontSize: 15,
+  },
+  explanationBox: {
+    flexDirection: 'row',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 8,
+    padding: SPACING.sm + 2,
+    marginTop: SPACING.md,
+    alignItems: 'flex-start',
+  },
+  explanationIcon: {
+    fontSize: 14,
+    marginRight: 6,
+    marginTop: 1,
+  },
+  explanationText: {
+    ...TYPOGRAPHY.caption,
+    color: '#0369A1',
+    flex: 1,
+    lineHeight: 16,
+    fontSize: 11,
   },
   actionBtn: {
     backgroundColor: COLORS.secondary,

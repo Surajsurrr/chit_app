@@ -161,20 +161,41 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         )}
 
         {/* My Chit Scheme Section */}
-        <Text style={styles.sectionTitle}>My Chit Scheme</Text>
+        <Text style={styles.sectionTitle}>My Chit Scheme & Payout Details</Text>
         <Card style={styles.schemeCard}>
           <View style={styles.schemeRow}>
             <Text style={styles.schemeLabel}>Scheme Name</Text>
             <Text style={styles.schemeVal}>{scheme ? scheme.name : 'Active Scheme'}</Text>
           </View>
           <View style={styles.schemeRow}>
-            <Text style={styles.schemeLabel}>Scheme Amount</Text>
+            <Text style={styles.schemeLabel}>Total Scheme Value</Text>
             <Text style={styles.schemeVal}>₹{customer.amountGiven.toLocaleString('en-IN')}</Text>
           </View>
+          {scheme && (scheme.interestAmount || 0) > 0 ? (
+            <View style={styles.schemeRow}>
+              <Text style={styles.schemeLabel}>Interest Deducted</Text>
+              <Text style={styles.schemeInterestVal}>- ₹{scheme.interestAmount.toLocaleString('en-IN')}</Text>
+            </View>
+          ) : null}
+          <View style={[styles.schemeRow, styles.schemeHighlightRow]}>
+            <Text style={styles.schemeHighlightLabel}>Net Amount Received (Payout)</Text>
+            <Text style={styles.schemeHighlightVal}>
+              ₹{(scheme?.payoutAmount ?? (customer.amountGiven - (scheme?.interestAmount ?? 0))).toLocaleString('en-IN')}
+            </Text>
+          </View>
           <View style={styles.schemeRow}>
-            <Text style={styles.schemeLabel}>Collection terms</Text>
+            <Text style={styles.schemeLabel}>Installment Schedule</Text>
             <Text style={styles.schemeVal}>
               ₹{customer.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(customer.frequency)}
+            </Text>
+          </View>
+
+          {/* Customer Explanation Note */}
+          <View style={styles.customerNoticeBox}>
+            <Text style={styles.noticeIcon}>ℹ️</Text>
+            <Text style={styles.noticeText}>
+              {scheme?.description ||
+                `You receive a net payout of ₹${(scheme?.payoutAmount ?? (customer.amountGiven - (scheme?.interestAmount ?? 0))).toLocaleString('en-IN')} upfront (after ₹${(scheme?.interestAmount ?? 0).toLocaleString('en-IN')} interest deduction), and repay ₹${customer.amountGiven.toLocaleString('en-IN')} across scheduled installments.`}
             </Text>
           </View>
         </Card>
@@ -477,6 +498,49 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+  },
+  schemeInterestVal: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#D97706',
+  },
+  schemeHighlightRow: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: SPACING.sm,
+    borderRadius: 8,
+    marginVertical: 4,
+    borderBottomWidth: 0,
+  },
+  schemeHighlightLabel: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#047857',
+    fontSize: 13,
+  },
+  schemeHighlightVal: {
+    ...TYPOGRAPHY.amountMedium,
+    color: '#059669',
+    fontSize: 15,
+  },
+  customerNoticeBox: {
+    flexDirection: 'row',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 8,
+    padding: SPACING.sm + 2,
+    marginTop: SPACING.md,
+    alignItems: 'flex-start',
+  },
+  noticeIcon: {
+    fontSize: 14,
+    marginRight: 6,
+    marginTop: 1,
+  },
+  noticeText: {
+    ...TYPOGRAPHY.caption,
+    color: '#0369A1',
+    flex: 1,
+    lineHeight: 16,
+    fontSize: 11,
   },
   schemeLabel: {
     ...TYPOGRAPHY.bodyMedium,
