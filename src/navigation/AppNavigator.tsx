@@ -2,7 +2,8 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, View, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Constants
 import { COLORS } from '../constants/theme';
@@ -43,6 +44,10 @@ const Tab = createBottomTabNavigator();
 
 // Admin Tab Navigator
 function AdminTabNavigator() {
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, 28);
+  const tabHeight = 65 + bottomInset;
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -59,18 +64,31 @@ function AdminTabNavigator() {
             iconName = 'list';
           }
 
-          return <Ionicons name={iconName} size={size} color={color} />;
+          return <Ionicons name={iconName} size={24} color={color} />;
         },
         tabBarActiveTintColor: COLORS.secondary,
         tabBarInactiveTintColor: COLORS.textMuted,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '700',
+          marginTop: 4,
+        },
+        tabBarItemStyle: {
+          paddingTop: 8,
+        },
         headerShown: false,
         tabBarStyle: {
           backgroundColor: COLORS.white,
           borderTopWidth: 1,
           borderTopColor: COLORS.border,
-          height: 60,
-          paddingBottom: 8,
+          height: tabHeight,
+          paddingBottom: bottomInset,
           paddingTop: 8,
+          elevation: 16,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.12,
+          shadowRadius: 8,
         },
       })}
     >
@@ -84,6 +102,10 @@ function AdminTabNavigator() {
 
 // Customer Tab Navigator
 function CustomerTabNavigator() {
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, 28);
+  const tabHeight = 65 + bottomInset;
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -100,18 +122,31 @@ function CustomerTabNavigator() {
             iconName = 'person';
           }
 
-          return <Ionicons name={iconName} size={size} color={color} />;
+          return <Ionicons name={iconName} size={24} color={color} />;
         },
         tabBarActiveTintColor: COLORS.success,
         tabBarInactiveTintColor: COLORS.textMuted,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '700',
+          marginTop: 4,
+        },
+        tabBarItemStyle: {
+          paddingTop: 8,
+        },
         headerShown: false,
         tabBarStyle: {
           backgroundColor: COLORS.white,
           borderTopWidth: 1,
           borderTopColor: COLORS.border,
-          height: 60,
-          paddingBottom: 8,
+          height: tabHeight,
+          paddingBottom: bottomInset,
           paddingTop: 8,
+          elevation: 16,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.12,
+          shadowRadius: 8,
         },
       })}
     >
