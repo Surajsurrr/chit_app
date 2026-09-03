@@ -7,6 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Modal,
+  Alert,
 } from 'react-native';
 import { useChitData } from '../../context/ChitDataContext';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
@@ -16,6 +17,7 @@ import FormInput from '../../components/FormInput';
 import TransactionRow from '../../components/TransactionRow';
 import { formatDateLong, formatDateShort, getPaymentStatusInfo, formatFrequency } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
+import { Scheme } from '../../data/mockData';
 
 export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const {
@@ -25,6 +27,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     schemes,
     getCustomerStats,
     recordPayment,
+    updateCustomerScheme,
     logout,
   } = useChitData();
 
@@ -75,6 +78,35 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     } else {
       setPayError(result.error || 'Payment failed to record');
     }
+  };
+
+  const handleSelectScheme = (selectedScheme: Scheme) => {
+    if (selectedScheme.id === customer.schemeId) return;
+
+    const interest = selectedScheme.interestAmount || 0;
+    const payout = selectedScheme.payoutAmount || (selectedScheme.totalAmount - interest);
+
+    Alert.alert(
+      'Enroll in Scheme',
+      `Would you like to choose "${selectedScheme.name}" as your active scheme?\n\n• Total Scheme Value: ₹${selectedScheme.totalAmount.toLocaleString('en-IN')}\n• Upfront Net Payout: ₹${payout.toLocaleString('en-IN')}\n• Repayment: ₹${selectedScheme.collectionAmount.toLocaleString('en-IN')} (${formatFrequency(selectedScheme.frequency)})\n• Duration: ${selectedScheme.durationWeeksOrMonths} installments`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm & Enroll',
+          onPress: async () => {
+            const res = await updateCustomerScheme(customer.id, selectedScheme.id);
+            if (res.success) {
+              Alert.alert(
+                'Scheme Updated! 🎉',
+                `You have successfully enrolled in "${selectedScheme.name}". Your dashboard has been updated with the new scheme parameters.`
+              );
+            } else {
+              Alert.alert('Error', res.error || 'Failed to update scheme');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const nameInitials = customer.name
@@ -160,7 +192,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           </Card>
         )}
 
-        {/* My Chit Scheme Section */}
+        {/* My Active Chit Scheme Section */}
         <Text style={styles.sectionTitle}>My Chit Scheme & Payout Details</Text>
         <Card style={styles.schemeCard}>
           <View style={styles.schemeRow}>
@@ -171,10 +203,12 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             <Text style={styles.schemeLabel}>Total Scheme Value</Text>
             <Text style={styles.schemeVal}>₹{customer.amountGiven.toLocaleString('en-IN')}</Text>
           </View>
-          {scheme && (scheme.interestAmount || 0) > 0 ? (
+          {scheme && (scheme.interestAmount !== undefined) ? (
             <View style={styles.schemeRow}>
-              <Text style={styles.schemeLabel}>Interest Deducted</Text>
-              <Text style={styles.schemeInterestVal}>- ₹{scheme.interestAmount.toLocaleString('en-IN')}</Text>
+              <Text style={styles.schemeLabel}>Upfront Interest Deduction</Text>
+              <Text style={styles.schemeInterestVal}>
+                - ₹{scheme.interestAmount.toLocaleString('en-IN')} ({((scheme.interestAmount / customer.amountGiven) * 100).toFixed(1)}% rate)
+              </Text>
             </View>
           ) : null}
           <View style={[styles.schemeRow, styles.schemeHighlightRow]}>
@@ -199,6 +233,67 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             </Text>
           </View>
         </Card>
+
+        {/* Available Admin Schemes Section */}
+        <View style={styles.sectionHeaderBox}>
+          <Text style={styles.sectionTitle}>Available Admin Schemes</Text>
+          <Text style={styles.sectionSubtitle}>Choose or switch to any scheme offered by the organizer</Text>
+        </View>
+
+        {schemes.map((s) => {
+          const isCurrent = s.id === customer.schemeId;
+          const interest = s.interestAmount || 0;
+          const interestRate = ((interest / s.totalAmount) * 100).toFixed(1);
+          const payout = s.payoutAmount || Math.max(0, s.totalAmount - interest);
+
+          return (
+            <Card key={s.id} style={[styles.availableSchemeCard, isCurrent && styles.activeSchemeCardBorder]}>
+              <View style={styles.schemeCardHeader}>
+                <View style={{ flex: 1, marginRight: SPACING.sm }}>
+                  <Text style={styles.schemeCardName}>{s.name}</Text>
+                  <Text style={styles.schemeCardTag}>
+                    ₹{s.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(s.frequency)} ({s.durationWeeksOrMonths} collections)
+                  </Text>
+                </View>
+
+                {isCurrent ? (
+                  <View style={styles.enrolledBadge}>
+                    <Text style={styles.enrolledBadgeText}>✓ Active Scheme</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.selectSchemeBtn}
+                    onPress={() => handleSelectScheme(s)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.selectSchemeBtnText}>Choose Scheme →</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <View style={styles.schemeCardDivider} />
+
+              <View style={styles.schemeCardGrid}>
+                <View style={styles.schemeCardCol}>
+                  <Text style={styles.schemeCardLabel}>TOTAL VALUE</Text>
+                  <Text style={styles.schemeCardVal}>₹{s.totalAmount.toLocaleString('en-IN')}</Text>
+                </View>
+                <View style={styles.schemeCardCol}>
+                  <Text style={styles.schemeCardLabel}>INTEREST DEDUCTION</Text>
+                  <Text style={styles.schemeCardInterest}>- ₹{interest.toLocaleString('en-IN')} ({interestRate}%)</Text>
+                </View>
+                <View style={styles.schemeCardCol}>
+                  <Text style={styles.schemeCardLabel}>NET PAYOUT</Text>
+                  <Text style={styles.schemeCardPayout}>₹{payout.toLocaleString('en-IN')}</Text>
+                </View>
+              </View>
+
+              {s.description ? (
+                <Text style={styles.schemeCardDesc}>{s.description}</Text>
+              ) : null}
+            </Card>
+          );
+        })}
 
         {/* Recent Payment History */}
         <View style={styles.sectionHeader}>
@@ -476,6 +571,16 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     marginBottom: SPACING.md,
   },
+  sectionHeaderBox: {
+    marginTop: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+  sectionSubtitle: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginTop: -SPACING.xs + 2,
+    marginBottom: SPACING.md,
+  },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -549,6 +654,95 @@ const styles = StyleSheet.create({
   schemeVal: {
     ...TYPOGRAPHY.bodyMediumBold,
     color: COLORS.text,
+  },
+  // Available Admin Schemes Styles
+  availableSchemeCard: {
+    marginBottom: SPACING.md,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+  },
+  activeSchemeCardBorder: {
+    borderColor: COLORS.success,
+    backgroundColor: '#F0FDF4',
+  },
+  schemeCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  schemeCardName: {
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  schemeCardTag: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.secondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  enrolledBadge: {
+    backgroundColor: '#D1FAE5',
+    borderWidth: 1,
+    borderColor: '#6EE7B7',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  enrolledBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#065F46',
+    fontSize: 11,
+  },
+  selectSchemeBtn: {
+    backgroundColor: COLORS.secondary,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  selectSchemeBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.white,
+    fontSize: 11,
+  },
+  schemeCardDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: SPACING.sm + 2,
+  },
+  schemeCardGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  schemeCardCol: {
+    flex: 1,
+  },
+  schemeCardLabel: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textLight,
+    fontSize: 9,
+  },
+  schemeCardVal: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.text,
+    marginTop: 2,
+  },
+  schemeCardInterest: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#D97706',
+    marginTop: 2,
+  },
+  schemeCardPayout: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.success,
+    marginTop: 2,
+  },
+  schemeCardDesc: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginTop: SPACING.sm,
+    fontSize: 11,
+    lineHeight: 15,
   },
   historyCard: {
     borderWidth: 1,

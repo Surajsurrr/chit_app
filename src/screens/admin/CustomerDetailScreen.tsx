@@ -154,10 +154,12 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
             <Text style={styles.infoLabel}>Total Scheme Value</Text>
             <Text style={styles.infoValue}>₹{customer.amountGiven.toLocaleString('en-IN')}</Text>
           </View>
-          {scheme && (scheme.interestAmount || 0) > 0 ? (
+          {scheme && (scheme.interestAmount !== undefined) ? (
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Upfront Interest Deducted</Text>
-              <Text style={[styles.infoValue, { color: '#D97706' }]}>- ₹{scheme.interestAmount.toLocaleString('en-IN')}</Text>
+              <Text style={[styles.infoValue, { color: '#D97706' }]}>
+                - ₹{scheme.interestAmount.toLocaleString('en-IN')} ({((scheme.interestAmount / customer.amountGiven) * 100).toFixed(1)}% rate)
+              </Text>
             </View>
           ) : null}
           <View style={[styles.infoRow, styles.payoutRow]}>

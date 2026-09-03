@@ -58,6 +58,10 @@ interface ChitDataContextType {
     schemeId: string,
     updatedScheme: Partial<Omit<Scheme, 'id' | 'startDate' | 'status'>>
   ) => void;
+  updateCustomerScheme: (
+    customerId: string,
+    schemeId: string
+  ) => Promise<{ success: boolean; error?: string }>;
   recordPayment: (
     customerId: string,
     amount: number,
@@ -157,8 +161,13 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           setCustomers(JSON.parse(savedCustomers));
           setPayments(JSON.parse(savedPayments));
           const parsedSchemes: Scheme[] = JSON.parse(savedSchemes).map((s: Scheme) => {
-            const interest = s.interestAmount ?? 0;
-            const payout = s.payoutAmount ?? (s.totalAmount - interest);
+            const initialMatch = INITIAL_SCHEMES.find((init) => init.id === s.id);
+            const interest = (s.interestAmount !== undefined && s.interestAmount > 0)
+              ? s.interestAmount
+              : (initialMatch?.interestAmount ?? (s.totalAmount * 0.08));
+            const payout = (s.payoutAmount !== undefined && s.payoutAmount > 0 && s.payoutAmount < s.totalAmount)
+              ? s.payoutAmount
+              : Math.max(0, s.totalAmount - interest);
             return {
               ...s,
               interestAmount: interest,
@@ -292,6 +301,34 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } catch (e) {
       console.error('Failed to save updated scheme', e);
     }
+  };
+
+  const updateCustomerScheme = async (customerId: string, schemeId: string) => {
+    const selectedScheme = schemes.find((s) => s.id === schemeId);
+    if (!selectedScheme) {
+      return { success: false, error: 'Scheme not found' };
+    }
+
+    const updatedCustomers = customers.map((c) => {
+      if (c.id === customerId) {
+        return {
+          ...c,
+          schemeId: selectedScheme.id,
+          amountGiven: selectedScheme.totalAmount,
+          collectionAmount: selectedScheme.collectionAmount,
+          frequency: selectedScheme.frequency,
+        };
+      }
+      return c;
+    });
+
+    setCustomers(updatedCustomers);
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(updatedCustomers));
+    } catch (e) {
+      console.error('Failed to update customer scheme', e);
+    }
+    return { success: true };
   };
 
   const recordPayment = (
@@ -558,6 +595,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         addCustomer,
         addScheme,
         updateScheme,
+        updateCustomerScheme,
         recordPayment,
         resetData,
         loginAsAdmin,
