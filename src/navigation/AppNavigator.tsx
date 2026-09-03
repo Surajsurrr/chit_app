@@ -24,6 +24,7 @@ import SchemesScreen from '../screens/admin/SchemesScreen';
 
 // Customer screens
 import HomeScreen from '../screens/customer/HomeScreen';
+import MySchemesScreen from '../screens/customer/MySchemesScreen';
 import PaymentsScreen from '../screens/customer/PaymentsScreen';
 import ReceiptsScreen from '../screens/customer/ReceiptsScreen';
 import ProfileScreen from '../screens/customer/ProfileScreen';
@@ -114,8 +115,8 @@ function CustomerTabNavigator() {
 
           if (route.name === 'Home') {
             iconName = 'home';
-          } else if (route.name === 'Payments') {
-            iconName = 'card';
+          } else if (route.name === 'MySchemes') {
+            iconName = 'layers';
           } else if (route.name === 'Receipts') {
             iconName = 'receipt';
           } else if (route.name === 'Profile') {
@@ -151,7 +152,7 @@ function CustomerTabNavigator() {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Payments" component={PaymentsScreen} />
+      <Tab.Screen name="MySchemes" component={MySchemesScreen} options={{ tabBarLabel: 'My Schemes' }} />
       <Tab.Screen name="Receipts" component={ReceiptsScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>

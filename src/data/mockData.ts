@@ -11,6 +11,7 @@ export interface Customer {
   frequency: 'daily' | 'every_3_days' | 'weekly' | 'monthly';
   startDate: string;
   nextPaymentDate: string;
+  enrolledSchemeIds?: string[];
 }
 
 export interface Payment {

@@ -32,7 +32,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   } = useChitData();
 
   const customer = customers.find((c) => c.id === selectedCustomerId);
-  
+
   // Modal state
   const [isPayModalVisible, setIsPayModalVisible] = useState(false);
   const [payAmount, setPayAmount] = useState('');
@@ -118,14 +118,14 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <View>
           <Text style={styles.welcomeText}>WELCOME BACK</Text>
           <Text style={styles.customerName}>{customer.name}</Text>
         </View>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.avatar}
           onPress={() => navigation.navigate('Profile')}
         >
@@ -134,7 +134,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
+
         {/* Remaining Balance Hero */}
         <Card style={styles.heroCard}>
           <Text style={styles.heroLabel}>REMAINING BALANCE</Text>
@@ -298,7 +298,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         {/* Recent Payment History */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recent Payments</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Payments')}>
+          <TouchableOpacity onPress={() => navigation.navigate('Receipts')}>
             <Text style={styles.sectionLink}>View All</Text>
           </TouchableOpacity>
         </View>
@@ -339,7 +339,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
             <ScrollView style={styles.modalScroll} keyboardShouldPersistTaps="handled">
               <Text style={styles.modalCustName}>{customer.name}</Text>
-              
+
               <View style={styles.modalStatsCard}>
                 <Text style={styles.statsLabel}>REMAINING BALANCE</Text>
                 <Text style={styles.statsValue}>₹{stats.remainingAmount.toLocaleString('en-IN')}</Text>
@@ -391,7 +391,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 size="large"
                 variant="success"
               />
-              
+
               <Text style={styles.gatewayDisclaimer}>
                 This is a simulated secure transaction for demonstration purposes.
               </Text>

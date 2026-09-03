@@ -311,12 +311,18 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const updatedCustomers = customers.map((c) => {
       if (c.id === customerId) {
+        const currentEnrolled = c.enrolledSchemeIds || [c.schemeId];
+        const newEnrolled = currentEnrolled.includes(schemeId)
+          ? currentEnrolled
+          : [...currentEnrolled, schemeId];
+
         return {
           ...c,
           schemeId: selectedScheme.id,
           amountGiven: selectedScheme.totalAmount,
           collectionAmount: selectedScheme.collectionAmount,
           frequency: selectedScheme.frequency,
+          enrolledSchemeIds: newEnrolled,
         };
       }
       return c;
