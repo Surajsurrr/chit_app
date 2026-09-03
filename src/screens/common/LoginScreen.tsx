@@ -81,7 +81,22 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       } else {
         setErrors({ login: result.error || 'Authentication failed' });
       }
-    }, 600);
+    }, 200);
+  };
+
+  // Quick 1-Tap Demo Admin Sign In
+  const handleQuickAdminLogin = () => {
+    setAdminUsername('admin');
+    setAdminPassword('admin123');
+    setErrors({});
+    setLoading(true);
+    setTimeout(() => {
+      const result = loginAsAdmin('admin', 'admin123');
+      setLoading(false);
+      if (!result.success) {
+        setErrors({ login: result.error || 'Authentication failed' });
+      }
+    }, 200);
   };
 
   // Login handler - Customer
@@ -115,7 +130,22 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       } else {
         setErrors({ login: result.error || 'Authentication failed' });
       }
-    }, 600);
+    }, 200);
+  };
+
+  // Quick 1-Tap Demo Customer Sign In
+  const handleQuickCustomerLogin = () => {
+    setCustomerPhone('9876543210');
+    setCustomerPin('1234');
+    setErrors({});
+    setLoading(true);
+    setTimeout(() => {
+      const result = loginAsCustomer('9876543210', '1234');
+      setLoading(false);
+      if (!result.success) {
+        setErrors({ login: result.error || 'Authentication failed' });
+      }
+    }, 200);
   };
 
   // Registration handler - Admin

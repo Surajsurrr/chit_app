@@ -1,25 +1,48 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, SafeAreaView, TextInput, FlatList, TouchableOpacity } from 'react-native';
+import {
+  StyleSheet,
+  Text,
+  View,
+  SafeAreaView,
+  TextInput,
+  FlatList,
+  TouchableOpacity,
+  Modal,
+  ScrollView,
+  Alert,
+} from 'react-native';
 import { useChitData } from '../../context/ChitDataContext';
+import { Customer } from '../../data/mockData';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
 import Card from '../../components/Card';
-import { formatFrequency, formatDateShort } from '../../utils/dateHelpers';
+import FormInput from '../../components/FormInput';
+import Button from '../../components/Button';
+import { formatFrequency, formatDateShort, getPaymentStatusInfo } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
 
 export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { customers, schemes, getCustomerStats, logout } = useChitData();
+  const { customers, schemes, getCustomerStats, recordPayment, logout } = useChitData();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'ALL' | 'ACTIVE' | 'SETTLED'>('ALL');
+
+  // Collection modal states
+  const [isCollectModalVisible, setIsCollectModalVisible] = useState(false);
+  const [selectedCust, setSelectedCust] = useState<Customer | null>(null);
+  const [collectAmount, setCollectAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'Cash' | 'Card' | 'Bank Transfer'>('Cash');
+  const [collectError, setCollectError] = useState('');
 
   const customerData = customers.map((c) => {
     const stats = getCustomerStats(c.id);
     const scheme = schemes.find((s) => s.id === c.schemeId);
     const isSettled = stats.remainingAmount === 0;
+    const statusInfo = getPaymentStatusInfo(c.nextPaymentDate, stats.remainingAmount, c.frequency);
     return {
       customer: c,
       stats,
       scheme,
       isSettled,
+      statusInfo,
     };
   });
 
@@ -40,24 +63,103 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     return true;
   });
 
+  const handleOpenCollect = (cust: Customer) => {
+    setSelectedCust(cust);
+    setCollectAmount(cust.collectionAmount.toString());
+    setPaymentMethod('Cash');
+    setCollectError('');
+    setIsCollectModalVisible(true);
+  };
+
+  const handleConfirmCollection = () => {
+    if (!selectedCust) return;
+
+    const amount = parseFloat(collectAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setCollectError('Please enter a valid collection amount');
+      return;
+    }
+
+    const custStats = getCustomerStats(selectedCust.id);
+    if (amount > custStats.remainingAmount) {
+      setCollectError(
+        `Amount cannot exceed remaining balance of ₹${custStats.remainingAmount.toLocaleString('en-IN')}`
+      );
+      return;
+    }
+
+    const result = recordPayment(selectedCust.id, amount, paymentMethod);
+    if (result.success && result.receipt) {
+      const receiptId = result.receipt.id;
+      const custName = selectedCust.name;
+      setIsCollectModalVisible(false);
+      setSelectedCust(null);
+
+      Alert.alert(
+        'Collection Recorded! 🎉',
+        `Successfully collected ₹${amount.toLocaleString('en-IN')} from ${custName}. Overdue status has been cleared and receipt generated.`,
+        [
+          {
+            text: 'View Receipt',
+            onPress: () => navigation.navigate('ReceiptDetail', { receiptId }),
+          },
+          {
+            text: 'Done',
+            style: 'cancel',
+          },
+        ]
+      );
+    } else {
+      setCollectError(result.error || 'Failed to record collection');
+    }
+  };
+
   const renderCustomerItem = ({ item }: { item: typeof customerData[0] }) => {
-    const { customer, stats, scheme, isSettled } = item;
+    const { customer, stats, scheme, isSettled, statusInfo } = item;
 
     return (
-      <TouchableOpacity
-        onPress={() => navigation.navigate('CustomerDetail', { customerId: customer.id })}
-        activeOpacity={0.8}
-        style={styles.cardWrapper}
-      >
+      <View style={styles.cardWrapper}>
         <Card style={styles.customerCard}>
-          {/* Top Row: Customer Info + Member Badge */}
+          {/* Top Row: Customer Info + Member Badge & Action Buttons */}
           <View style={styles.cardHeader}>
-            <View style={styles.customerNameSection}>
+            <TouchableOpacity
+              style={styles.customerNameSection}
+              onPress={() => navigation.navigate('CustomerDetail', { customerId: customer.id })}
+              activeOpacity={0.7}
+            >
               <View style={styles.nameRow}>
                 <Text style={styles.nameText}>{customer.name}</Text>
-                <View style={[styles.memberBadge, isSettled ? styles.settledBadge : styles.activeBadge]}>
-                  <Text style={[styles.memberBadgeText, isSettled ? styles.settledBadgeText : styles.activeBadgeText]}>
-                    {isSettled ? '✓ Fully Settled' : 'Active Member'}
+                <View
+                  style={[
+                    styles.memberBadge,
+                    isSettled
+                      ? styles.settledBadge
+                      : statusInfo.isOverdue
+                      ? styles.overdueBadge
+                      : statusInfo.status === 'DUE_TODAY'
+                      ? styles.dueTodayBadge
+                      : styles.activeBadge,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.memberBadgeText,
+                      isSettled
+                        ? styles.settledBadgeText
+                        : statusInfo.isOverdue
+                        ? styles.overdueBadgeText
+                        : statusInfo.status === 'DUE_TODAY'
+                        ? styles.dueTodayBadgeText
+                        : styles.activeBadgeText,
+                    ]}
+                  >
+                    {isSettled
+                      ? '✓ Fully Settled'
+                      : statusInfo.isOverdue
+                      ? `⚠️ ${statusInfo.statusText}`
+                      : statusInfo.status === 'DUE_TODAY'
+                      ? 'Due Today'
+                      : 'Active Member'}
                   </Text>
                 </View>
               </View>
@@ -65,54 +167,83 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
               <Text style={styles.schemeTagText}>
                 {scheme ? scheme.name : 'Chit Scheme'} · {formatFrequency(customer.frequency)}
               </Text>
-            </View>
+            </TouchableOpacity>
 
-            <View style={styles.viewProfileBtn}>
-              <Text style={styles.viewProfileText}>View Profile →</Text>
+            {/* Action Buttons: Collected Button beside View Profile */}
+            <View style={styles.headerButtonsContainer}>
+              {!isSettled ? (
+                <TouchableOpacity
+                  style={[styles.collectedBtn, statusInfo.isOverdue && styles.collectedBtnOverdue]}
+                  onPress={() => handleOpenCollect(customer)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.collectedBtnText}>
+                    {statusInfo.isOverdue ? 'Collect ⚠️' : '✓ Collected'}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.settledTag}>
+                  <Text style={styles.settledTagText}>✓ Settled</Text>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={styles.viewProfileBtn}
+                onPress={() => navigation.navigate('CustomerDetail', { customerId: customer.id })}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.viewProfileText}>View Profile →</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
-          <View style={styles.divider} />
+          {/* Navigates to details on tapping the financial summary / progress area */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('CustomerDetail', { customerId: customer.id })}
+            activeOpacity={0.8}
+          >
+            <View style={styles.divider} />
 
-          {/* Financial Overview Row */}
-          <View style={styles.financialRow}>
-            <View style={styles.finCol}>
-              <Text style={styles.finLabel}>SCHEME VALUE</Text>
-              <Text style={styles.finValue}>₹{customer.amountGiven.toLocaleString('en-IN')}</Text>
+            {/* Financial Overview Row */}
+            <View style={styles.financialRow}>
+              <View style={styles.finCol}>
+                <Text style={styles.finLabel}>SCHEME VALUE</Text>
+                <Text style={styles.finValue}>₹{customer.amountGiven.toLocaleString('en-IN')}</Text>
+              </View>
+              <View style={styles.finCol}>
+                <Text style={styles.finLabel}>TOTAL PAID</Text>
+                <Text style={[styles.finValue, styles.paidText]}>
+                  ₹{stats.paidAmount.toLocaleString('en-IN')}
+                </Text>
+              </View>
+              <View style={styles.finCol}>
+                <Text style={styles.finLabel}>REMAINING</Text>
+                <Text style={[styles.finValue, styles.remText]}>
+                  ₹{stats.remainingAmount.toLocaleString('en-IN')}
+                </Text>
+              </View>
             </View>
-            <View style={styles.finCol}>
-              <Text style={styles.finLabel}>TOTAL PAID</Text>
-              <Text style={[styles.finValue, styles.paidText]}>
-                ₹{stats.paidAmount.toLocaleString('en-IN')}
+
+            {/* Progress Bar */}
+            <View style={styles.progressContainer}>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressBar, { width: `${stats.progressPercentage}%` }]} />
+              </View>
+              <Text style={styles.progressPercentageText}>{Math.round(stats.progressPercentage)}% Paid</Text>
+            </View>
+
+            {/* Member Metadata Footer */}
+            <View style={styles.memberFooter}>
+              <Text style={styles.memberFooterText}>
+                Joined: {formatDateShort(customer.startDate)}
+              </Text>
+              <Text style={styles.memberFooterText}>
+                {stats.totalPayments} {stats.totalPayments === 1 ? 'payment' : 'payments'} recorded
               </Text>
             </View>
-            <View style={styles.finCol}>
-              <Text style={styles.finLabel}>REMAINING</Text>
-              <Text style={[styles.finValue, styles.remText]}>
-                ₹{stats.remainingAmount.toLocaleString('en-IN')}
-              </Text>
-            </View>
-          </View>
-
-          {/* Progress Bar */}
-          <View style={styles.progressContainer}>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressBar, { width: `${stats.progressPercentage}%` }]} />
-            </View>
-            <Text style={styles.progressPercentageText}>{Math.round(stats.progressPercentage)}% Paid</Text>
-          </View>
-
-          {/* Member Metadata Footer */}
-          <View style={styles.memberFooter}>
-            <Text style={styles.memberFooterText}>
-              Joined: {formatDateShort(customer.startDate)}
-            </Text>
-            <Text style={styles.memberFooterText}>
-              {stats.totalPayments} {stats.totalPayments === 1 ? 'payment' : 'payments'} recorded
-            </Text>
-          </View>
+          </TouchableOpacity>
         </Card>
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -197,6 +328,164 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
       >
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
+
+      {/* Record Collection Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={isCollectModalVisible}
+        onRequestClose={() => setIsCollectModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <View style={styles.modalIconBadge}>
+                  <Text style={{ fontSize: 16 }}>💰</Text>
+                </View>
+                <View>
+                  <Text style={styles.modalTitle}>Record Collection</Text>
+                  <Text style={styles.modalSubtitle}>Update customer collected amount</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => setIsCollectModalVisible(false)} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {selectedCust && (() => {
+              const custStats = getCustomerStats(selectedCust.id);
+              const custScheme = schemes.find((s) => s.id === selectedCust.schemeId);
+              const statusInfo = getPaymentStatusInfo(
+                selectedCust.nextPaymentDate,
+                custStats.remainingAmount,
+                selectedCust.frequency
+              );
+
+              return (
+                <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+                  {/* Customer summary card */}
+                  <View style={styles.modalCustCard}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.modalCustName}>{selectedCust.name}</Text>
+                      <Text style={styles.modalCustPhone}>+91 {selectedCust.phone}</Text>
+                      <Text style={styles.modalCustScheme}>
+                        {custScheme ? custScheme.name : 'Chit Scheme'} · {formatFrequency(selectedCust.frequency)}
+                      </Text>
+                    </View>
+                    <View style={styles.modalBalanceBox}>
+                      <Text style={styles.modalBalanceLabel}>REMAINING</Text>
+                      <Text style={styles.modalBalanceVal}>
+                        ₹{custStats.remainingAmount.toLocaleString('en-IN')}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Overdue clearing notice banner */}
+                  {statusInfo.isOverdue && (
+                    <View style={styles.modalOverdueBanner}>
+                      <Text style={styles.modalOverdueIcon}>⚠️</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.modalOverdueTitle}>Overdue Installment ({statusInfo.statusText})</Text>
+                        <Text style={styles.modalOverdueDesc}>
+                          Scheduled installment: ₹{selectedCust.collectionAmount.toLocaleString('en-IN')}. Recording this collection will clear the overdue status and schedule the next installment cycle.
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {collectError ? <Text style={styles.modalError}>{collectError}</Text> : null}
+
+                  {/* Amount Input */}
+                  <FormInput
+                    label="Collection Amount (₹)"
+                    placeholder="Enter amount collected"
+                    value={collectAmount}
+                    onChangeText={(val) => {
+                      setCollectAmount(val);
+                      setCollectError('');
+                    }}
+                    keyboardType="numeric"
+                  />
+
+                  {/* Quick Amount Suggestion Chips */}
+                  <View style={styles.quickChipsRow}>
+                    <TouchableOpacity
+                      style={styles.quickChip}
+                      onPress={() => setCollectAmount(selectedCust.collectionAmount.toString())}
+                    >
+                      <Text style={styles.quickChipText}>
+                        ₹{selectedCust.collectionAmount.toLocaleString('en-IN')} (1x Due)
+                      </Text>
+                    </TouchableOpacity>
+
+                    {custStats.remainingAmount >= selectedCust.collectionAmount * 2 && (
+                      <TouchableOpacity
+                        style={styles.quickChip}
+                        onPress={() => setCollectAmount((selectedCust.collectionAmount * 2).toString())}
+                      >
+                        <Text style={styles.quickChipText}>
+                          ₹{(selectedCust.collectionAmount * 2).toLocaleString('en-IN')} (2x Due)
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
+                    <TouchableOpacity
+                      style={styles.quickChip}
+                      onPress={() => setCollectAmount(custStats.remainingAmount.toString())}
+                    >
+                      <Text style={styles.quickChipText}>Full Settle</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Payment Method Selector */}
+                  <Text style={styles.modalSectionLabel}>Payment Method</Text>
+                  <View style={styles.methodGrid}>
+                    {(['Cash', 'UPI', 'Bank Transfer', 'Card'] as const).map((method) => {
+                      const isSelected = paymentMethod === method;
+                      return (
+                        <TouchableOpacity
+                          key={method}
+                          style={[
+                            styles.methodBtn,
+                            isSelected ? styles.methodBtnSelected : null,
+                          ]}
+                          onPress={() => setPaymentMethod(method)}
+                          activeOpacity={0.7}
+                        >
+                          <Text
+                            style={[
+                              styles.methodBtnText,
+                              isSelected ? styles.methodBtnTextSelected : null,
+                            ]}
+                          >
+                            {method}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* Clarification info */}
+                  <View style={styles.modalInfoNotice}>
+                    <Text style={styles.modalInfoText}>
+                      ✓ Automatically generates verified receipt & clears overdue in Collections tab.
+                    </Text>
+                  </View>
+
+                  <Button
+                    title="Confirm Collection & Clear Overdue"
+                    onPress={handleConfirmCollection}
+                    style={styles.modalSubmitBtn}
+                    size="large"
+                    variant="success"
+                  />
+                </ScrollView>
+              );
+            })()}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -343,12 +632,64 @@ const styles = StyleSheet.create({
     color: '#2563EB',
     fontSize: 10,
   },
+  overdueBadge: {
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  overdueBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#DC2626',
+    fontSize: 10,
+  },
+  dueTodayBadge: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+  },
+  dueTodayBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#D97706',
+    fontSize: 10,
+  },
   settledBadge: {
     backgroundColor: '#ECFDF5',
     borderWidth: 1,
     borderColor: '#A7F3D0',
   },
   settledBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#059669',
+    fontSize: 10,
+  },
+  headerButtonsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  collectedBtn: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  collectedBtnOverdue: {
+    backgroundColor: '#EF4444',
+  },
+  collectedBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.white,
+    fontSize: 11,
+  },
+  settledTag: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  settledTagText: {
     ...TYPOGRAPHY.captionBold,
     color: '#059669',
     fontSize: 10,
@@ -461,6 +802,208 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     lineHeight: 32,
     marginTop: -2,
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '90%',
+    paddingBottom: 24,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+  },
+  modalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  modalIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.sm,
+  },
+  modalTitle: {
+    ...TYPOGRAPHY.h3,
+    color: COLORS.primary,
+  },
+  modalSubtitle: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    fontSize: 11,
+  },
+  closeBtn: {
+    padding: SPACING.xs,
+  },
+  closeBtnText: {
+    fontSize: 20,
+    color: COLORS.textMuted,
+    fontWeight: 'bold',
+  },
+  modalScroll: {
+    padding: SPACING.lg,
+  },
+  modalCustCard: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    padding: SPACING.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  modalCustName: {
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  modalCustPhone: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  modalCustScheme: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.secondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  modalBalanceBox: {
+    alignItems: 'flex-end',
+  },
+  modalBalanceLabel: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textLight,
+    fontSize: 9,
+  },
+  modalBalanceVal: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.danger,
+    marginTop: 2,
+  },
+  modalOverdueBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderLeftWidth: 4,
+    borderLeftColor: '#EF4444',
+    borderRadius: 10,
+    padding: SPACING.sm + 2,
+    marginBottom: SPACING.md,
+    gap: SPACING.sm,
+  },
+  modalOverdueIcon: {
+    fontSize: 20,
+  },
+  modalOverdueTitle: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#991B1B',
+    fontSize: 11,
+  },
+  modalOverdueDesc: {
+    ...TYPOGRAPHY.caption,
+    color: '#7F1D1D',
+    fontSize: 10,
+    marginTop: 1,
+  },
+  modalError: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.danger,
+    marginBottom: SPACING.sm,
+  },
+  quickChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.xs + 2,
+    marginBottom: SPACING.md,
+    marginTop: -SPACING.xs,
+  },
+  quickChip: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  quickChipText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.secondary,
+    fontSize: 11,
+  },
+  modalSectionLabel: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.primaryLight,
+    marginBottom: SPACING.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontSize: 10,
+  },
+  methodGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -SPACING.xs,
+    marginBottom: SPACING.md,
+  },
+  methodBtn: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingVertical: SPACING.sm + 2,
+    margin: SPACING.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '46%',
+    flexGrow: 1,
+  },
+  methodBtnSelected: {
+    backgroundColor: COLORS.success,
+    borderColor: COLORS.success,
+  },
+  methodBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textMuted,
+  },
+  methodBtnTextSelected: {
+    color: COLORS.white,
+  },
+  modalInfoNotice: {
+    backgroundColor: '#ECFDF5',
+    borderRadius: 8,
+    padding: SPACING.sm,
+    marginBottom: SPACING.lg,
+  },
+  modalInfoText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#065F46',
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  modalSubmitBtn: {
+    marginBottom: SPACING.xl,
   },
 });
 

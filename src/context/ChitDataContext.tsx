@@ -137,9 +137,17 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (savedIsLoggedIn === 'true') setIsLoggedIn(true);
         if (savedCurrentUserId) setCurrentUserId(savedCurrentUserId);
 
-        // Load admins
+        // Load admins with robust default fallback
         if (savedAdmins) {
-          setAdmins(JSON.parse(savedAdmins));
+          try {
+            const parsed: AdminCredentials[] = JSON.parse(savedAdmins);
+            const hasDefault = parsed.some((a) => a.username.toLowerCase() === 'admin');
+            const mergedAdmins = hasDefault ? parsed : [...DEFAULT_ADMINS, ...parsed];
+            setAdmins(mergedAdmins);
+          } catch {
+            await AsyncStorage.setItem(STORAGE_KEYS.ADMINS, JSON.stringify(DEFAULT_ADMINS));
+            setAdmins(DEFAULT_ADMINS);
+          }
         } else {
           await AsyncStorage.setItem(STORAGE_KEYS.ADMINS, JSON.stringify(DEFAULT_ADMINS));
           setAdmins(DEFAULT_ADMINS);
@@ -347,7 +355,23 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     // 3. Update customer details (next payment date)
-    const nextPayDate = calculateNextPaymentDate(customer.nextPaymentDate, customer.frequency);
+    // If the customer was overdue or due today (nextPaymentDate <= today),
+    // recording this collection clears the overdue, so schedule the next installment from today.
+    const currentNextDate = new Date(customer.nextPaymentDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const compareDate = new Date(currentNextDate);
+    compareDate.setHours(0, 0, 0, 0);
+
+    const isOverdueOrDueToday = isNaN(compareDate.getTime()) || compareDate.getTime() <= today.getTime();
+    const baseDate = isOverdueOrDueToday ? timestamp.toISOString() : customer.nextPaymentDate;
+    
+    // Number of installment cycles covered by this payment amount
+    const installmentAmount = customer.collectionAmount > 0 ? customer.collectionAmount : amount;
+    const cycles = Math.max(1, Math.floor(amount / installmentAmount));
+
+    const nextPayDate = calculateNextPaymentDate(baseDate, customer.frequency, cycles);
     const updatedCustomers = customers.map((c) => {
       if (c.id === customerId) {
         return {
@@ -375,7 +399,10 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Authentication & Registration Methods
   const loginAsAdmin = (username: string, password: string) => {
-    const admin = admins.find((a) => a.username.toLowerCase() === username.trim().toLowerCase());
+    const trimmedUser = username.trim().toLowerCase();
+    const admin = admins.find((a) => a.username.toLowerCase() === trimmedUser) ||
+      (trimmedUser === 'admin' ? DEFAULT_ADMINS[0] : undefined);
+
     if (!admin) {
       return { success: false, error: 'Admin username not registered' };
     }
