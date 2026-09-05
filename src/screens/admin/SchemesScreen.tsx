@@ -19,7 +19,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Scheme } from '../../data/mockData';
 
 export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { schemes, customers, addScheme, updateScheme, logout } = useChitData();
+  const { schemes, customers, addScheme, updateScheme, logout, isAdminProfileComplete } = useChitData();
 
   // Create / Edit Scheme states
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -268,12 +268,39 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           <Text style={styles.headerTitle}>Chit Schemes</Text>
           <Text style={styles.headerSubtitle}>Manage payouts, interest & rules</Text>
         </View>
-        <TouchableOpacity style={styles.roleBtn} onPress={() => logout()}>
-          <Text style={styles.roleBtnText}>Log Out</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRightRow}>
+          <TouchableOpacity
+            style={styles.profileBtn}
+            onPress={() => navigation.navigate('AdminProfile')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.profileBtnText}>👤 Profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.roleBtn} onPress={() => logout()} activeOpacity={0.8}>
+            <Text style={styles.roleBtnText}>Log Out</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.content}>
+        {/* Mandatory Admin Profile Alert Banner */}
+        {!isAdminProfileComplete && (
+          <TouchableOpacity
+            style={styles.profileWarningBanner}
+            onPress={() => navigation.navigate('AdminProfile')}
+            activeOpacity={0.9}
+          >
+            <Text style={styles.profileWarningIcon}>🔒</Text>
+            <View style={{ flex: 1, marginLeft: SPACING.sm }}>
+              <Text style={styles.profileWarningTitle}>Schemes Hidden from Customers</Text>
+              <Text style={styles.profileWarningText}>
+                Customers cannot view or avail any chit schemes until your organizer profile is set up. Tap here to complete your profile.
+              </Text>
+            </View>
+            <Text style={styles.profileWarningAction}>Setup →</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Scheme Policy Notice Banner */}
         <View style={styles.policyNoticeBanner}>
           <Text style={styles.policyNoticeIcon}>ℹ️</Text>
@@ -502,6 +529,22 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textLight,
+  },
+  headerRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs + 2,
+  },
+  profileBtn: {
+    backgroundColor: COLORS.secondary,
+    paddingHorizontal: SPACING.md - 2,
+    paddingVertical: SPACING.sm,
+    borderRadius: 8,
+  },
+  profileBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.white,
+    fontSize: 12,
   },
   roleBtn: {
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
@@ -926,6 +969,40 @@ const styles = StyleSheet.create({
   },
   modalSubmitBtn: {
     marginBottom: SPACING.xl,
+  },
+  profileWarningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFBEB',
+    borderBottomWidth: 1,
+    borderBottomColor: '#FCD34D',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 4,
+  },
+  profileWarningIcon: {
+    fontSize: 20,
+    marginRight: 2,
+  },
+  profileWarningTitle: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#92400E',
+    fontSize: 12,
+  },
+  profileWarningText: {
+    ...TYPOGRAPHY.caption,
+    color: '#B45309',
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  profileWarningAction: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#D97706',
+    marginLeft: SPACING.xs,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 6,
   },
   policyNoticeBanner: {
     flexDirection: 'row',

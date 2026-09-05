@@ -21,6 +21,7 @@ import CustomerDetailScreen from '../screens/admin/CustomerDetailScreen';
 import AddCustomerScreen from '../screens/admin/AddCustomerScreen';
 import CollectionsScreen from '../screens/admin/CollectionsScreen';
 import SchemesScreen from '../screens/admin/SchemesScreen';
+import AdminProfileScreen from '../screens/admin/AdminProfileScreen';
 
 // Customer screens
 import HomeScreen from '../screens/customer/HomeScreen';
@@ -37,6 +38,7 @@ export type RootStackParamList = {
   CustomerTabs: undefined;
   CustomerDetail: { customerId: string };
   AddCustomer: undefined;
+  AdminProfile: undefined;
   ReceiptDetail: { receiptId: string };
 };
 
@@ -201,6 +203,7 @@ export const AppNavigator = () => {
           <Stack.Screen name="AdminTabs" component={AdminTabNavigator} />
           <Stack.Screen name="CustomerDetail" component={CustomerDetailScreen} />
           <Stack.Screen name="AddCustomer" component={AddCustomerScreen} />
+          <Stack.Screen name="AdminProfile" component={AdminProfileScreen} />
           <Stack.Screen 
             name="ReceiptDetail" 
             component={ReceiptDetailScreen}

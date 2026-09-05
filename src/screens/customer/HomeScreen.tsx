@@ -27,6 +27,9 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     getCustomerStats,
     updateCustomerScheme,
     logout,
+    isAdminProfileComplete,
+    isCustomerProfileComplete,
+    currentAdmin,
   } = useChitData();
 
   const customer = customers.find((c) => c.id === selectedCustomerId);
@@ -40,6 +43,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     );
   }
 
+  const isCustProfileComplete = isCustomerProfileComplete(customer.id);
   const scheme = schemes.find((s) => s.id === customer.schemeId);
   const enrolledSnapshot = customer.enrolledSchemes?.find((es) => es.schemeId === customer.schemeId)
     || customer.enrolledSchemes?.[customer.enrolledSchemes.length - 1];
@@ -60,6 +64,28 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   const handleSelectScheme = (selectedScheme: Scheme) => {
     if (selectedScheme.id === customer.schemeId) return;
+
+    // 1. Mandatory Admin Profile Setup Check
+    if (!isAdminProfileComplete) {
+      Alert.alert(
+        'Schemes Unavailable 🔒',
+        'The chit fund organizer has not completed their profile setup yet. Schemes cannot be chosen until the organizer sets up their profile.'
+      );
+      return;
+    }
+
+    // 2. Mandatory Customer Profile Setup Check
+    if (!isCustProfileComplete) {
+      Alert.alert(
+        'Profile Setup Required 📝',
+        'You must complete your profile details (including Email and Residential Address) before choosing or enrolling in a scheme.\n\nTap "Complete Profile" to update your details now.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Complete Profile', onPress: () => navigation.navigate('Profile') },
+        ]
+      );
+      return;
+    }
 
     const interest = selectedScheme.interestAmount || 0;
     const payout = selectedScheme.payoutAmount || (selectedScheme.totalAmount - interest);
@@ -264,63 +290,106 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         {/* Available Admin Schemes Section */}
         <View style={styles.sectionHeaderBox}>
           <Text style={styles.sectionTitle}>Available Admin Schemes</Text>
-          <Text style={styles.sectionSubtitle}>Choose or switch to any scheme offered by the organizer</Text>
+          <Text style={styles.sectionSubtitle}>
+            {isAdminProfileComplete
+              ? 'Choose or switch to any scheme offered by the organizer'
+              : 'Schemes visibility locked until organizer completes profile setup'}
+          </Text>
         </View>
 
-        {schemes.map((s) => {
-          const isCurrent = s.id === customer.schemeId;
-          const interest = s.interestAmount || 0;
-          const interestRate = ((interest / s.totalAmount) * 100).toFixed(1);
-          const payout = s.payoutAmount || Math.max(0, s.totalAmount - interest);
-
-          return (
-            <Card key={s.id} style={[styles.availableSchemeCard, isCurrent && styles.activeSchemeCardBorder]}>
-              <View style={styles.schemeCardHeader}>
-                <View style={{ flex: 1, marginRight: SPACING.sm }}>
-                  <Text style={styles.schemeCardName}>{s.name}</Text>
-                  <Text style={styles.schemeCardTag}>
-                    ₹{s.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(s.frequency)} ({s.durationWeeksOrMonths} collections)
+        {!isAdminProfileComplete ? (
+          <Card style={styles.lockedCard}>
+            <View style={styles.lockedIconBox}>
+              <Text style={styles.lockedIcon}>🔒</Text>
+            </View>
+            <Text style={styles.lockedTitle}>Chit Schemes Unavailable</Text>
+            <Text style={styles.lockedText}>
+              The chit fund organizer has not completed their mandatory profile setup yet. Schemes will become visible once the administrator completes their verified organizer profile.
+            </Text>
+            <View style={styles.lockedBadge}>
+              <Text style={styles.lockedBadgeText}>Organizer Setup Pending</Text>
+            </View>
+          </Card>
+        ) : (
+          <>
+            {!isCustProfileComplete && (
+              <TouchableOpacity
+                style={styles.customerIncompleteBanner}
+                onPress={() => navigation.navigate('Profile')}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.customerIncompleteIcon}>⚠️</Text>
+                <View style={{ flex: 1, marginLeft: SPACING.sm }}>
+                  <Text style={styles.customerIncompleteTitle}>Profile Setup Required</Text>
+                  <Text style={styles.customerIncompleteText}>
+                    You must complete your profile details (Email and Residential Address) in the Profile tab to choose or enroll in a scheme.
                   </Text>
                 </View>
+                <Text style={styles.customerIncompleteAction}>Setup →</Text>
+              </TouchableOpacity>
+            )}
 
-                {isCurrent ? (
-                  <View style={styles.enrolledBadge}>
-                    <Text style={styles.enrolledBadgeText}>✓ Active Scheme</Text>
+            {schemes.map((s) => {
+              const isCurrent = s.id === customer.schemeId;
+              const interest = s.interestAmount || 0;
+              const interestRate = ((interest / s.totalAmount) * 100).toFixed(1);
+              const payout = s.payoutAmount || Math.max(0, s.totalAmount - interest);
+
+              return (
+                <Card key={s.id} style={[styles.availableSchemeCard, isCurrent && styles.activeSchemeCardBorder]}>
+                  <View style={styles.schemeCardHeader}>
+                    <View style={{ flex: 1, marginRight: SPACING.sm }}>
+                      <Text style={styles.schemeCardName}>{s.name}</Text>
+                      <Text style={styles.schemeCardTag}>
+                        ₹{s.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(s.frequency)} ({s.durationWeeksOrMonths} collections)
+                      </Text>
+                    </View>
+
+                    {isCurrent ? (
+                      <View style={styles.enrolledBadge}>
+                        <Text style={styles.enrolledBadgeText}>✓ Active Scheme</Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={[
+                          styles.selectSchemeBtn,
+                          !isCustProfileComplete && styles.selectSchemeBtnDisabled,
+                        ]}
+                        onPress={() => handleSelectScheme(s)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.selectSchemeBtnText}>
+                          {isCustProfileComplete ? 'Choose Scheme →' : 'Complete Profile'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.selectSchemeBtn}
-                    onPress={() => handleSelectScheme(s)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.selectSchemeBtnText}>Choose Scheme →</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
 
-              <View style={styles.schemeCardDivider} />
+                  <View style={styles.schemeCardDivider} />
 
-              <View style={styles.schemeCardGrid}>
-                <View style={styles.schemeCardCol}>
-                  <Text style={styles.schemeCardLabel}>TOTAL VALUE</Text>
-                  <Text style={styles.schemeCardVal}>₹{s.totalAmount.toLocaleString('en-IN')}</Text>
-                </View>
-                <View style={styles.schemeCardCol}>
-                  <Text style={styles.schemeCardLabel}>INTEREST DEDUCTION</Text>
-                  <Text style={styles.schemeCardInterest}>- ₹{interest.toLocaleString('en-IN')} ({interestRate}%)</Text>
-                </View>
-                <View style={styles.schemeCardCol}>
-                  <Text style={styles.schemeCardLabel}>NET PAYOUT</Text>
-                  <Text style={styles.schemeCardPayout}>₹{payout.toLocaleString('en-IN')}</Text>
-                </View>
-              </View>
+                  <View style={styles.schemeCardGrid}>
+                    <View style={styles.schemeCardCol}>
+                      <Text style={styles.schemeCardLabel}>TOTAL VALUE</Text>
+                      <Text style={styles.schemeCardVal}>₹{s.totalAmount.toLocaleString('en-IN')}</Text>
+                    </View>
+                    <View style={styles.schemeCardCol}>
+                      <Text style={styles.schemeCardLabel}>INTEREST DEDUCTION</Text>
+                      <Text style={styles.schemeCardInterest}>- ₹{interest.toLocaleString('en-IN')} ({interestRate}%)</Text>
+                    </View>
+                    <View style={styles.schemeCardCol}>
+                      <Text style={styles.schemeCardLabel}>NET PAYOUT</Text>
+                      <Text style={styles.schemeCardPayout}>₹{payout.toLocaleString('en-IN')}</Text>
+                    </View>
+                  </View>
 
-              {s.description ? (
-                <Text style={styles.schemeCardDesc}>{s.description}</Text>
-              ) : null}
-            </Card>
-          );
-        })}
+                  {s.description ? (
+                    <Text style={styles.schemeCardDesc}>{s.description}</Text>
+                  ) : null}
+                </Card>
+              );
+            })}
+          </>
+        )}
 
         {/* Recent Payments Collected */}
         <View style={styles.sectionHeader}>
@@ -816,6 +885,89 @@ const styles = StyleSheet.create({
   emptyHistoryText: {
     ...TYPOGRAPHY.bodyMedium,
     color: COLORS.textMuted,
+  },
+  lockedCard: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 16,
+    padding: SPACING.xl,
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  lockedIconBox: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#EEF2F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.md,
+  },
+  lockedIcon: {
+    fontSize: 28,
+  },
+  lockedTitle: {
+    ...TYPOGRAPHY.h3,
+    color: '#334155',
+    textAlign: 'center',
+    marginBottom: SPACING.xs,
+  },
+  lockedText: {
+    ...TYPOGRAPHY.bodyMedium,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: SPACING.md,
+  },
+  lockedBadge: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 20,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 6,
+  },
+  lockedBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#92400E',
+  },
+  customerIncompleteBanner: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1.5,
+    borderColor: '#F59E0B',
+    borderRadius: 12,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  customerIncompleteIcon: {
+    fontSize: 22,
+  },
+  customerIncompleteTitle: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#92400E',
+    fontSize: 12,
+  },
+  customerIncompleteText: {
+    ...TYPOGRAPHY.caption,
+    color: '#B45309',
+    marginTop: 2,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  customerIncompleteAction: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#D97706',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginLeft: SPACING.xs,
+  },
+  selectSchemeBtnDisabled: {
+    backgroundColor: '#94A3B8',
   },
   errorContainer: {
     flex: 1,

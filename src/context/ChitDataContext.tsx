@@ -18,7 +18,34 @@ export type UserRole = 'admin' | 'customer';
 export interface AdminCredentials {
   username: string;
   password: string;
+  name?: string;
+  businessName?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  pincode?: string;
 }
+
+export const isAdminProfileComplete = (admin?: AdminCredentials | null): boolean => {
+  if (!admin) return false;
+  return Boolean(
+    admin.name && admin.name.trim().length > 0 &&
+    admin.phone && admin.phone.trim().replace(/[^0-9]/g, '').length === 10 &&
+    admin.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(admin.email.trim()) &&
+    admin.address && admin.address.trim().length > 0
+  );
+};
+
+export const isCustomerProfileComplete = (customer?: Customer | null): boolean => {
+  if (!customer) return false;
+  return Boolean(
+    customer.name && customer.name.trim().length > 0 &&
+    customer.phone && customer.phone.trim().replace(/[^0-9]/g, '').length === 10 &&
+    customer.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email.trim()) &&
+    customer.address && customer.address.trim().length > 0
+  );
+};
 
 interface AdminStats {
   totalCustomers: number;
@@ -49,6 +76,10 @@ interface ChitDataContextType {
   currentUserRole: UserRole | null;
   currentUserId: string | null;
   admins: AdminCredentials[];
+  currentAdmin: AdminCredentials | null;
+  isAdminProfileComplete: boolean;
+  isCustomerProfileComplete: (customerId?: string) => boolean;
+  isCurrentCustomerProfileComplete: boolean;
   
   // Actions
   switchRole: (role: UserRole) => void;
@@ -66,6 +97,9 @@ interface ChitDataContextType {
   updateCustomerProfile: (
     customerId: string,
     updatedData: Partial<Customer>
+  ) => Promise<{ success: boolean; error?: string }>;
+  updateAdminProfile: (
+    updatedData: Partial<AdminCredentials>
   ) => Promise<{ success: boolean; error?: string }>;
   recordPayment: (
     customerId: string,
@@ -102,6 +136,7 @@ const STORAGE_KEYS = {
   RECEIPTS: '@chitflow:receipts',
   IS_LOGGED_IN: '@chitflow:is_logged_in',
   CURRENT_USER_ID: '@chitflow:current_user_id',
+  CURRENT_ADMIN_USER: '@chitflow:current_admin_user',
   ADMINS: '@chitflow:admins',
 };
 
@@ -121,6 +156,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentUserRole, setCurrentUserRole] = useState<UserRole | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentAdminUser, setCurrentAdminUser] = useState<string | null>(null);
   const [admins, setAdmins] = useState<AdminCredentials[]>([]);
 
   // Load data from storage on startup
@@ -144,6 +180,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const savedReceipts = await AsyncStorage.getItem(STORAGE_KEYS.RECEIPTS);
         const savedIsLoggedIn = await AsyncStorage.getItem(STORAGE_KEYS.IS_LOGGED_IN);
         const savedCurrentUserId = await AsyncStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
+        const savedCurrentAdminUser = await AsyncStorage.getItem(STORAGE_KEYS.CURRENT_ADMIN_USER);
         const savedAdmins = await AsyncStorage.getItem(STORAGE_KEYS.ADMINS);
 
         if (savedRole) {
@@ -153,6 +190,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (savedSelectedCust) setSelectedCustomerIdState(savedSelectedCust);
         if (savedIsLoggedIn === 'true') setIsLoggedIn(true);
         if (savedCurrentUserId) setCurrentUserId(savedCurrentUserId);
+        if (savedCurrentAdminUser) setCurrentAdminUser(savedCurrentAdminUser);
 
         // Load admins (empty by default if none registered yet)
         if (savedAdmins) {
@@ -373,6 +411,26 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const updateCustomerScheme = async (customerId: string, schemeId: string) => {
+    // 1. Mandatory Admin Profile Setup Check
+    if (!isAdminProfileComplete(currentAdmin)) {
+      return {
+        success: false,
+        error: 'Chit fund organizer has not completed their profile setup yet. Schemes are temporarily unavailable.',
+      };
+    }
+
+    // 2. Mandatory Customer Profile Setup Check
+    const targetCust = customers.find((c) => c.id === customerId);
+    if (!targetCust) {
+      return { success: false, error: 'Customer account not found' };
+    }
+    if (!isCustomerProfileComplete(targetCust)) {
+      return {
+        success: false,
+        error: 'Please complete your profile details (including Email and Residential Address) in the Profile tab before availing a scheme.',
+      };
+    }
+
     const selectedScheme = schemes.find((s) => s.id === schemeId);
     if (!selectedScheme) {
       return { success: false, error: 'Scheme not found' };
@@ -553,10 +611,12 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setCurrentUserRole('admin');
     setCurrentRoleState('admin');
     setCurrentUserId(null);
+    setCurrentAdminUser(trimmedUser);
 
     AsyncStorage.setItem(STORAGE_KEYS.IS_LOGGED_IN, 'true').catch(console.error);
     AsyncStorage.setItem(STORAGE_KEYS.ROLE, 'admin').catch(console.error);
     AsyncStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID).catch(console.error);
+    AsyncStorage.setItem(STORAGE_KEYS.CURRENT_ADMIN_USER, trimmedUser).catch(console.error);
 
     return { success: true };
   };
@@ -602,9 +662,39 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const updatedAdmins = [...admins, newAdmin];
     setAdmins(updatedAdmins);
+    setCurrentAdminUser(username.trim());
     AsyncStorage.setItem(STORAGE_KEYS.ADMINS, JSON.stringify(updatedAdmins)).catch(console.error);
+    AsyncStorage.setItem(STORAGE_KEYS.CURRENT_ADMIN_USER, username.trim()).catch(console.error);
 
     return { success: true };
+  };
+
+  const updateAdminProfile = async (updatedData: Partial<AdminCredentials>) => {
+    const targetUsername = currentAdmin?.username || currentAdminUser || (admins.length > 0 ? admins[0].username : null);
+    if (!targetUsername && admins.length === 0) {
+      return { success: false, error: 'No admin account found to update' };
+    }
+
+    const effectiveUser = targetUsername || admins[0].username;
+    const updatedAdmins = admins.map((a) => {
+      if (a.username.toLowerCase() === effectiveUser.toLowerCase()) {
+        return {
+          ...a,
+          ...updatedData,
+          username: a.username, // username stays fixed as account ID
+        };
+      }
+      return a;
+    });
+
+    setAdmins(updatedAdmins);
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.ADMINS, JSON.stringify(updatedAdmins));
+      return { success: true };
+    } catch (e) {
+      console.error('Failed to update admin profile:', e);
+      return { success: false, error: 'Failed to save admin profile' };
+    }
   };
 
   const registerCustomer = (name: string, phone: string, pin: string, schemeId?: string) => {
@@ -635,13 +725,19 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setIsLoggedIn(false);
     setCurrentUserRole(null);
     setCurrentUserId(null);
+    setCurrentAdminUser(null);
 
     AsyncStorage.setItem(STORAGE_KEYS.IS_LOGGED_IN, 'false').catch(console.error);
     AsyncStorage.removeItem(STORAGE_KEYS.ROLE).catch(console.error);
     AsyncStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID).catch(console.error);
+    AsyncStorage.removeItem(STORAGE_KEYS.CURRENT_ADMIN_USER).catch(console.error);
   };
 
   // Helper selectors
+  const currentAdmin: AdminCredentials | null =
+    admins.find((a) => a.username.toLowerCase() === currentAdminUser?.toLowerCase()) ||
+    (admins.length > 0 ? admins[0] : null);
+
   const getCustomerStats = (customerId: string): CustomerStats => {
     const customer = customers.find((c) => c.id === customerId);
     if (!customer) {
@@ -683,6 +779,19 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
   };
 
+  const isCurrentAdminProfileComplete = isAdminProfileComplete(currentAdmin);
+
+  const checkCustomerProfileComplete = (customerId?: string): boolean => {
+    const targetId = customerId || selectedCustomerId || currentUserId;
+    if (!targetId) return false;
+    const cust = customers.find((c) => c.id === targetId);
+    return isCustomerProfileComplete(cust);
+  };
+
+  const isCurrentCustomerProfileComplete = checkCustomerProfileComplete(
+    selectedCustomerId || currentUserId || undefined
+  );
+
   return (
     <ChitDataContext.Provider
       value={{
@@ -697,6 +806,10 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         currentUserRole,
         currentUserId,
         admins,
+        currentAdmin,
+        isAdminProfileComplete: isCurrentAdminProfileComplete,
+        isCustomerProfileComplete: checkCustomerProfileComplete,
+        isCurrentCustomerProfileComplete,
         switchRole,
         selectCustomer,
         addCustomer,
@@ -704,6 +817,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         updateScheme,
         updateCustomerScheme,
         updateCustomerProfile,
+        updateAdminProfile,
         recordPayment,
         resetData,
         loginAsAdmin,

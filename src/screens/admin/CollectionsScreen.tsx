@@ -296,9 +296,18 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
           <Text style={styles.headerTitle}>Collections</Text>
           <Text style={styles.headerSubtitle}>Monitor schedules, message & collect</Text>
         </View>
-        <TouchableOpacity style={styles.roleBtn} onPress={() => logout()}>
-          <Text style={styles.roleBtnText}>Log Out</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRightRow}>
+          <TouchableOpacity
+            style={styles.profileBtn}
+            onPress={() => navigation.navigate('AdminProfile')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.profileBtnText}>👤 Profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.roleBtn} onPress={() => logout()} activeOpacity={0.8}>
+            <Text style={styles.roleBtnText}>Log Out</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.content}>
@@ -575,6 +584,22 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textLight,
+  },
+  headerRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs + 2,
+  },
+  profileBtn: {
+    backgroundColor: COLORS.secondary,
+    paddingHorizontal: SPACING.md - 2,
+    paddingVertical: SPACING.sm,
+    borderRadius: 8,
+  },
+  profileBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.white,
+    fontSize: 12,
   },
   roleBtn: {
     backgroundColor: 'rgba(255, 255, 255, 0.15)',

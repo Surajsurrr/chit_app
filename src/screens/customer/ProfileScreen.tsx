@@ -10,9 +10,10 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { useChitData } from '../../context/ChitDataContext';
-import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
 import Card from '../../components/Card';
 import FormInput from '../../components/FormInput';
 import Button from '../../components/Button';
@@ -27,6 +28,9 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     getCustomerStats,
     updateCustomerProfile,
     logout,
+    isCustomerProfileComplete,
+    currentAdmin,
+    isAdminProfileComplete,
   } = useChitData();
 
   const customer = customers.find((c) => c.id === selectedCustomerId);
@@ -93,21 +97,31 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     setIsEditModalVisible(true);
   };
 
+  const isCustProfileComplete = isCustomerProfileComplete(customer.id);
+
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
 
     if (!editName.trim()) {
-      errors.name = 'Full name is required';
+      errors.name = 'Full name is required (mandatory)';
     }
 
+    const cleanPhone = editPhone.trim().replace(/[^0-9]/g, '');
     if (!editPhone.trim()) {
-      errors.phone = 'Phone number is required';
-    } else if (!/^\d{10}$/.test(editPhone.trim().replace(/[^0-9]/g, ''))) {
+      errors.phone = 'Phone number is required (mandatory)';
+    } else if (cleanPhone.length !== 10) {
       errors.phone = 'Phone must be a valid 10-digit mobile number';
     }
 
-    if (editEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editEmail.trim())) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!editEmail.trim()) {
+      errors.email = 'Email address is required (mandatory to avail schemes)';
+    } else if (!emailRegex.test(editEmail.trim())) {
       errors.email = 'Please enter a valid email address';
+    }
+
+    if (!editAddress.trim()) {
+      errors.address = 'Residential address is required (mandatory to avail schemes)';
     }
 
     if (editPincode.trim() && !/^\d{6}$/.test(editPincode.trim().replace(/[^0-9]/g, ''))) {
@@ -172,6 +186,47 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Customer Profile Completion Status Banner */}
+        <View style={isCustProfileComplete ? styles.statusBoxComplete : styles.statusBoxIncomplete}>
+          <View style={styles.statusBoxHeader}>
+            <Text style={styles.statusBoxIcon}>{isCustProfileComplete ? '✅' : '⚠️'}</Text>
+            <View style={{ flex: 1, marginLeft: SPACING.xs + 4 }}>
+              <Text style={isCustProfileComplete ? styles.statusTitleComplete : styles.statusTitleIncomplete}>
+                {isCustProfileComplete ? 'Member Profile Verified & Complete' : 'Profile Setup Incomplete (Mandatory for Schemes)'}
+              </Text>
+              <Text style={isCustProfileComplete ? styles.statusSubComplete : styles.statusSubIncomplete}>
+                {isCustProfileComplete
+                  ? 'Your profile is complete and verified. You are eligible to enroll in and avail any chit scheme.'
+                  : 'You cannot avail any scheme until your Email and Residential Address are filled.'}
+              </Text>
+            </View>
+          </View>
+          {!isCustProfileComplete && (
+            <View style={styles.checklistGrid}>
+              <View style={styles.checklistItem}>
+                <Text style={customer.name ? styles.checkDone : styles.checkMissing}>
+                  {customer.name ? '✓' : '✗'} Full Name
+                </Text>
+              </View>
+              <View style={styles.checklistItem}>
+                <Text style={customer.phone && customer.phone.length === 10 ? styles.checkDone : styles.checkMissing}>
+                  {customer.phone && customer.phone.length === 10 ? '✓' : '✗'} 10-Digit Phone
+                </Text>
+              </View>
+              <View style={styles.checklistItem}>
+                <Text style={customer.email ? styles.checkDone : styles.checkMissing}>
+                  {customer.email ? '✓' : '✗'} Email Address
+                </Text>
+              </View>
+              <View style={styles.checklistItem}>
+                <Text style={customer.address ? styles.checkDone : styles.checkMissing}>
+                  {customer.address ? '✓' : '✗'} Residential Address
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+
         {/* User Avatar Card */}
         <Card style={styles.userCard} padding={SPACING.lg}>
           <View style={styles.avatarLarge}>
@@ -272,6 +327,83 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
               {customer.nomineeRelation || 'Not provided'}
             </Text>
           </View>
+        </Card>
+
+        {/* Section: Chit Fund Organizer / Admin Details */}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Chit Fund Organizer Details</Text>
+        </View>
+
+        <Card style={styles.organizerProfileCard}>
+          {isAdminProfileComplete ? (
+            <>
+              <View style={styles.organizerCardTop}>
+                <View style={styles.organizerAvatar}>
+                  <Text style={styles.organizerAvatarText}>
+                    {currentAdmin?.name ? currentAdmin.name[0].toUpperCase() : '👑'}
+                  </Text>
+                </View>
+                <View style={{ flex: 1, marginLeft: SPACING.md }}>
+                  <View style={styles.organizerBadge}>
+                    <Text style={styles.organizerBadgeText}>👑 VERIFIED ORGANIZER</Text>
+                  </View>
+                  <Text style={styles.organizerNameText}>{currentAdmin?.name || 'Organizer Admin'}</Text>
+                  <Text style={styles.organizerAgencyText}>
+                    🏢 {currentAdmin?.businessName || 'ChitFlow Organizer'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.organizerDivider} />
+
+              <View style={styles.row}>
+                <Text style={styles.label}>Primary Phone</Text>
+                <View style={styles.rowRight}>
+                  <Text style={styles.value}>+91 {currentAdmin?.phone}</Text>
+                  {currentAdmin?.phone && (
+                    <TouchableOpacity
+                      style={styles.miniActionBtn}
+                      onPress={() => Linking.openURL(`tel:${currentAdmin.phone}`)}
+                    >
+                      <Text style={styles.miniActionText}>📞 Call</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.row}>
+                <Text style={styles.label}>Official Email</Text>
+                <View style={styles.rowRight}>
+                  <Text style={styles.value}>{currentAdmin?.email}</Text>
+                  {currentAdmin?.email && (
+                    <TouchableOpacity
+                      style={styles.miniActionBtn}
+                      onPress={() => Linking.openURL(`mailto:${currentAdmin.email}`)}
+                    >
+                      <Text style={styles.miniActionText}>✉️ Mail</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                <Text style={styles.label}>Office Address</Text>
+                <Text style={[styles.value, { maxWidth: '60%', textAlign: 'right' }]}>
+                  {currentAdmin?.address}
+                  {currentAdmin?.city ? `, ${currentAdmin.city}` : ''}
+                  {currentAdmin?.pincode ? ` - ${currentAdmin.pincode}` : ''}
+                </Text>
+              </View>
+            </>
+          ) : (
+            <View style={styles.organizerPendingBox}>
+              <Text style={styles.organizerPendingIcon}>⚠️</Text>
+              <Text style={styles.organizerPendingTitle}>Organizer Profile Setup Pending</Text>
+              <Text style={styles.organizerPendingText}>
+                The chit fund administrator has not completed their verified profile setup yet. Schemes remain locked until the organizer completes setup.
+              </Text>
+            </View>
+          )}
         </Card>
 
         {/* Scheme Terms summary */}
@@ -392,7 +524,7 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
               />
 
               <FormInput
-                label="Email Address"
+                label="Email Address *"
                 placeholder="e.g. name@example.com"
                 value={editEmail}
                 onChangeText={(val) => {
@@ -405,16 +537,26 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
               />
 
               <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Residential Address</Text>
+                <Text style={styles.inputLabel}>Residential Address *</Text>
                 <TextInput
-                  style={[styles.inputBox, styles.textArea]}
+                  style={[
+                    styles.inputBox,
+                    styles.textArea,
+                    formErrors.address ? styles.inputErrorBorder : null,
+                  ]}
                   placeholder="Door No, Street Name, Landmark..."
                   placeholderTextColor={COLORS.textLight}
                   value={editAddress}
-                  onChangeText={setEditAddress}
+                  onChangeText={(val) => {
+                    setEditAddress(val);
+                    setFormErrors((prev) => ({ ...prev, address: '' }));
+                  }}
                   multiline={true}
                   numberOfLines={3}
                 />
+                {formErrors.address ? (
+                  <Text style={styles.errorTextSmall}>{formErrors.address}</Text>
+                ) : null}
               </View>
 
               <View style={styles.formRow2}>
@@ -585,6 +727,170 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     flexGrow: 1,
   },
+  statusBoxComplete: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+    borderRadius: 14,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    ...SHADOWS.sm,
+  },
+  statusBoxIncomplete: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1.5,
+    borderColor: '#F59E0B',
+    borderRadius: 14,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    ...SHADOWS.sm,
+  },
+  statusBoxHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  statusBoxIcon: {
+    fontSize: 22,
+  },
+  statusTitleComplete: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#065F46',
+  },
+  statusTitleIncomplete: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#92400E',
+  },
+  statusSubComplete: {
+    ...TYPOGRAPHY.caption,
+    color: '#047857',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  statusSubIncomplete: {
+    ...TYPOGRAPHY.caption,
+    color: '#B45309',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  checklistGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: SPACING.sm,
+    paddingTop: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: '#FDE68A',
+    gap: SPACING.xs + 2,
+  },
+  checklistItem: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  checkDone: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#047857',
+    fontSize: 11,
+  },
+  checkMissing: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#DC2626',
+    fontSize: 11,
+  },
+  organizerProfileCard: {
+    marginBottom: SPACING.lg,
+    borderWidth: 1.5,
+    borderColor: '#BAE6FD',
+    backgroundColor: '#F0F9FF',
+    borderRadius: 14,
+    padding: SPACING.md,
+    ...SHADOWS.sm,
+  },
+  organizerCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  organizerAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  organizerAvatarText: {
+    ...TYPOGRAPHY.h3,
+    color: COLORS.white,
+    fontSize: 20,
+  },
+  organizerBadge: {
+    backgroundColor: '#E0F2FE',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginBottom: 2,
+  },
+  organizerBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#0369A1',
+    fontSize: 10,
+  },
+  organizerNameText: {
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  organizerAgencyText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.secondary,
+    marginTop: 2,
+  },
+  organizerDivider: {
+    height: 1,
+    backgroundColor: '#BAE6FD',
+    marginVertical: SPACING.sm + 2,
+  },
+  miniActionBtn: {
+    backgroundColor: COLORS.secondaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginLeft: SPACING.xs,
+  },
+  miniActionText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.secondary,
+    fontSize: 11,
+  },
+  organizerPendingBox: {
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+  },
+  organizerPendingIcon: {
+    fontSize: 28,
+    marginBottom: SPACING.xs,
+  },
+  organizerPendingTitle: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#92400E',
+  },
+  organizerPendingText: {
+    ...TYPOGRAPHY.caption,
+    color: '#B45309',
+    textAlign: 'center',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  inputErrorBorder: {
+    borderColor: '#EF4444',
+  },
+  errorTextSmall: {
+    ...TYPOGRAPHY.caption,
+    color: '#EF4444',
+    marginTop: 3,
+    fontSize: 11,
+  },
   userCard: {
     alignItems: 'center',
     marginBottom: SPACING.lg,
@@ -665,6 +971,10 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm + 2,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+    alignItems: 'center',
+  },
+  rowRight: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
   label: {

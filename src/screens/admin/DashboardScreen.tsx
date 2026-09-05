@@ -7,7 +7,7 @@ import { formatDateShort, getPaymentStatusInfo, formatFrequency } from '../../ut
 import { StatusBar } from 'expo-status-bar';
 
 export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { getAdminStats, customers, payments, schemes, resetData, logout, getCustomerStats } = useChitData();
+  const { getAdminStats, customers, payments, schemes, resetData, logout, getCustomerStats, isAdminProfileComplete } = useChitData();
   const stats = getAdminStats();
 
   const schemeDistribution = schemes.map((s) => {
@@ -42,12 +42,42 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
           <Text style={styles.headerTitle}>ChitFlow Admin</Text>
           <Text style={styles.headerSubtitle}>Overview of Chit Operations</Text>
         </View>
-        <TouchableOpacity style={styles.roleBtn} onPress={() => logout()}>
-          <Text style={styles.roleBtnText}>Log Out</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRightRow}>
+          <TouchableOpacity
+            style={styles.profileBtn}
+            onPress={() => navigation.navigate('AdminProfile')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.profileBtnText}>👤 Profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.roleBtn} onPress={() => logout()} activeOpacity={0.8}>
+            <Text style={styles.roleBtnText}>Log Out</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Mandatory Admin Profile Alert Banner */}
+        {!isAdminProfileComplete && (
+          <TouchableOpacity
+            style={styles.profileWarningBanner}
+            onPress={() => navigation.navigate('AdminProfile')}
+            activeOpacity={0.9}
+          >
+            <View style={styles.profileWarningIconBox}>
+              <Text style={styles.profileWarningIcon}>⚠️</Text>
+            </View>
+            <View style={{ flex: 1, marginLeft: SPACING.sm }}>
+              <Text style={styles.profileWarningTitle}>Organizer Profile Incomplete (Mandatory)</Text>
+              <Text style={styles.profileWarningSub}>
+                Your chit schemes are currently HIDDEN from customers. Set up your profile details (Name, Phone, Email, Office Address) to unlock customer view.
+              </Text>
+              <View style={styles.profileWarningActionRow}>
+                <Text style={styles.profileWarningActionText}>Complete Setup Now →</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        )}
         {/* Overdue Payment Urgent Banner */}
         {overdueCustomers.length > 0 && (
           <TouchableOpacity
@@ -239,6 +269,22 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.textLight,
   },
+  headerRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs + 2,
+  },
+  profileBtn: {
+    backgroundColor: COLORS.secondary,
+    paddingHorizontal: SPACING.md - 2,
+    paddingVertical: SPACING.sm,
+    borderRadius: 8,
+  },
+  profileBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.white,
+    fontSize: 12,
+  },
   roleBtn: {
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
     paddingHorizontal: SPACING.md,
@@ -254,6 +300,47 @@ const styles = StyleSheet.create({
     paddingBottom: 110,
     backgroundColor: COLORS.background,
     flexGrow: 1,
+  },
+  profileWarningBanner: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1.5,
+    borderColor: '#F59E0B',
+    borderLeftWidth: 6,
+    borderRadius: 14,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    ...SHADOWS.sm,
+  },
+  profileWarningIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileWarningIcon: {
+    fontSize: 18,
+  },
+  profileWarningTitle: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#92400E',
+  },
+  profileWarningSub: {
+    ...TYPOGRAPHY.caption,
+    color: '#B45309',
+    marginTop: 3,
+    lineHeight: 18,
+  },
+  profileWarningActionRow: {
+    marginTop: SPACING.xs + 2,
+  },
+  profileWarningActionText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#D97706',
+    fontWeight: '700',
   },
   overdueBannerCard: {
     backgroundColor: '#FFF5F5',
