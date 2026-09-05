@@ -44,38 +44,48 @@ export const RoleSelectionScreen: React.FC<{ navigation: any }> = ({ navigation 
         </TouchableOpacity>
 
         {/* Customer Selection Section */}
-        <Text style={[styles.sectionTitle, { marginTop: SPACING.xl }]}>Member / Customer Login (Simulated)</Text>
-        <Text style={styles.helperText}>Select a customer account to test their member experience:</Text>
+        <Text style={[styles.sectionTitle, { marginTop: SPACING.xl }]}>Member / Customer Login</Text>
+        <Text style={styles.helperText}>Select an enrolled member account or register a new one:</Text>
 
-        {customers.map((customer) => (
-          <TouchableOpacity
-            key={customer.id}
-            onPress={() => handleCustomerSelect(customer.id)}
-            activeOpacity={0.8}
-            style={styles.cardWrapper}
-          >
-            <Card style={styles.customerCard}>
-              <View style={styles.customerCardContent}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {customer.name
-                      .split(' ')
-                      .map((n) => n[0])
-                      .join('')
-                      .toUpperCase()}
-                  </Text>
+        {customers.length === 0 ? (
+          <Card style={styles.emptyCustCard}>
+            <Text style={styles.emptyCustIcon}>👥</Text>
+            <Text style={styles.emptyCustTitle}>No Members Registered Yet</Text>
+            <Text style={styles.emptyCustText}>
+              Log in as Organizer / Admin above to register customers, or use the Member Sign Up tab on the Login page to register.
+            </Text>
+          </Card>
+        ) : (
+          customers.map((customer) => (
+            <TouchableOpacity
+              key={customer.id}
+              onPress={() => handleCustomerSelect(customer.id)}
+              activeOpacity={0.8}
+              style={styles.cardWrapper}
+            >
+              <Card style={styles.customerCard}>
+                <View style={styles.customerCardContent}>
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>
+                      {customer.name
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')
+                        .toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={styles.customerInfo}>
+                    <Text style={styles.customerName}>{customer.name}</Text>
+                    <Text style={styles.customerPhone}>+91 {customer.phone}</Text>
+                    <Text style={styles.customerScheme}>
+                      Scheme: {customer.amountGiven >= 100000 ? `₹${customer.amountGiven / 100000}L` : `₹${customer.amountGiven.toLocaleString('en-IN')}`}
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.customerInfo}>
-                  <Text style={styles.customerName}>{customer.name}</Text>
-                  <Text style={styles.customerPhone}>+91 {customer.phone}</Text>
-                  <Text style={styles.customerScheme}>
-                    Scheme: {customer.amountGiven >= 100000 ? `₹${customer.amountGiven / 100000}L` : `₹${customer.amountGiven.toLocaleString('en-IN')}`}
-                  </Text>
-                </View>
-              </View>
-            </Card>
-          </TouchableOpacity>
-        ))}
+              </Card>
+            </TouchableOpacity>
+          ))
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -198,6 +208,28 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.captionBold,
     color: COLORS.primary,
     marginTop: 4,
+  },
+  emptyCustCard: {
+    backgroundColor: COLORS.white,
+    padding: SPACING.lg,
+    alignItems: 'center',
+    borderRadius: 12,
+    marginTop: SPACING.sm,
+  },
+  emptyCustIcon: {
+    fontSize: 28,
+    marginBottom: SPACING.xs,
+  },
+  emptyCustTitle: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  emptyCustText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 16,
   },
 });
 

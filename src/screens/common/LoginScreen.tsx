@@ -18,7 +18,7 @@ import Card from '../../components/Card';
 import { StatusBar } from 'expo-status-bar';
 
 export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { loginAsAdmin, loginAsCustomer, registerAdmin, registerCustomer } = useChitData();
+  const { loginAsAdmin, loginAsCustomer, registerAdmin, registerCustomer, admins, customers, schemes } = useChitData();
 
   // Mode tabs: 'signin' or 'signup'
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
@@ -26,7 +26,7 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [loginTab, setLoginTab] = useState<'admin' | 'customer'>('admin');
 
   // Sign In states
-  const [adminUsername, setAdminUsername] = useState('admin');
+  const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerPin, setCustomerPin] = useState('');
@@ -84,21 +84,6 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }, 200);
   };
 
-  // Quick 1-Tap Demo Admin Sign In
-  const handleQuickAdminLogin = () => {
-    setAdminUsername('admin');
-    setAdminPassword('admin123');
-    setErrors({});
-    setLoading(true);
-    setTimeout(() => {
-      const result = loginAsAdmin('admin', 'admin123');
-      setLoading(false);
-      if (!result.success) {
-        setErrors({ login: result.error || 'Authentication failed' });
-      }
-    }, 200);
-  };
-
   // Login handler - Customer
   const handleCustomerSignIn = () => {
     setErrors({});
@@ -133,21 +118,6 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }, 200);
   };
 
-  // Quick 1-Tap Demo Customer Sign In
-  const handleQuickCustomerLogin = () => {
-    setCustomerPhone('9876543210');
-    setCustomerPin('1234');
-    setErrors({});
-    setLoading(true);
-    setTimeout(() => {
-      const result = loginAsCustomer('9876543210', '1234');
-      setLoading(false);
-      if (!result.success) {
-        setErrors({ login: result.error || 'Authentication failed' });
-      }
-    }, 200);
-  };
-
   // Registration handler - Admin
   const handleAdminSignUp = () => {
     setErrors({});
@@ -174,20 +144,28 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       const result = registerAdmin(regAdminUser.trim(), regAdminPass);
       setLoading(false);
       if (result.success) {
-        Alert.alert('Success', 'Admin account registered successfully! Please login.', [
-          {
-            text: 'OK',
-            onPress: () => {
-              setAuthMode('signin');
-              setAdminUsername(regAdminUser.trim());
-              resetForm();
+        const registeredUser = regAdminUser.trim();
+        const registeredPass = regAdminPass;
+        resetForm();
+        Alert.alert(
+          'Admin Registered! 🎉',
+          `Organizer account "${registeredUser}" was created successfully. You can now sign in with your credentials.`,
+          [
+            {
+              text: 'Sign In Now',
+              onPress: () => {
+                setAuthMode('signin');
+                setLoginTab('admin');
+                setAdminUsername(registeredUser);
+                setAdminPassword(registeredPass);
+              },
             },
-          },
-        ]);
+          ]
+        );
       } else {
         setErrors({ registration: result.error || 'Failed to create admin' });
       }
-    }, 600);
+    }, 400);
   };
 
   // Registration handler - Customer
@@ -226,20 +204,28 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       );
       setLoading(false);
       if (result.success) {
-        Alert.alert('Success', 'Customer registered successfully! Please login.', [
-          {
-            text: 'OK',
-            onPress: () => {
-              setAuthMode('signin');
-              setCustomerPhone(regCustPhone.trim());
-              resetForm();
+        const registeredPhone = regCustPhone.trim();
+        const registeredPin = regCustPin;
+        resetForm();
+        Alert.alert(
+          'Member Registered! 🎉',
+          `Member account for "${regCustName.trim()}" was created successfully. You can now sign in using your phone and PIN.`,
+          [
+            {
+              text: 'Sign In Now',
+              onPress: () => {
+                setAuthMode('signin');
+                setLoginTab('customer');
+                setCustomerPhone(registeredPhone);
+                setCustomerPin(registeredPin);
+              },
             },
-          },
-        ]);
+          ]
+        );
       } else {
         setErrors({ registration: result.error || 'Failed to register customer' });
       }
-    }, 600);
+    }, 400);
   };
 
   return (
@@ -325,10 +311,23 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 // Admin Sign In
                 <View>
                   <Text style={styles.formTitle}>Admin Portal</Text>
-                  <Text style={styles.formSub}>Log in to manage collections and customers</Text>
+                  <Text style={styles.formSub}>Log in to manage collections and members</Text>
+
+                  {admins.length === 0 && (
+                    <View style={styles.cleanSlateBanner}>
+                      <Text style={styles.cleanSlateIcon}>ℹ️</Text>
+                      <View style={{ flex: 1, marginLeft: SPACING.xs }}>
+                        <Text style={styles.cleanSlateTitle}>No Admin Registered Yet</Text>
+                        <Text style={styles.cleanSlateText}>
+                          Switch to the "Sign Up / Register" tab above to create your first Admin account.
+                        </Text>
+                      </View>
+                    </View>
+                  )}
 
                   <FormInput
                     label="Username"
+                    placeholder="Enter admin username"
                     value={adminUsername}
                     onChangeText={(val) => {
                       setAdminUsername(val);
@@ -358,13 +357,24 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                     style={styles.submitBtn}
                     size="large"
                   />
-                  <Text style={styles.hintText}>Demo Admin: admin / admin123</Text>
                 </View>
               ) : (
                 // Customer Sign In
                 <View>
                   <Text style={styles.formTitle}>Member Portal</Text>
                   <Text style={styles.formSub}>Log in to view balance and pay installments</Text>
+
+                  {customers.length === 0 && (
+                    <View style={styles.cleanSlateBanner}>
+                      <Text style={styles.cleanSlateIcon}>ℹ️</Text>
+                      <View style={{ flex: 1, marginLeft: SPACING.xs }}>
+                        <Text style={styles.cleanSlateTitle}>No Members Registered Yet</Text>
+                        <Text style={styles.cleanSlateText}>
+                          Members can self-register via "Sign Up / Register" above or be registered by the Admin in the organizer portal.
+                        </Text>
+                      </View>
+                    </View>
+                  )}
 
                   <FormInput
                     label="Registered Phone Number"
@@ -401,7 +411,6 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                     size="large"
                     variant="success"
                   />
-                  <Text style={styles.hintText}>Demo Member Phone: 9876543210 & PIN: 1234</Text>
                 </View>
               )
             ) : (
@@ -701,6 +710,33 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
     marginBottom: SPACING.sm,
     marginTop: -SPACING.xs,
+  },
+  cleanSlateBanner: {
+    flexDirection: 'row',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 10,
+    padding: SPACING.sm + 2,
+    marginBottom: SPACING.md,
+    alignItems: 'flex-start',
+  },
+  cleanSlateIcon: {
+    fontSize: 16,
+    marginRight: SPACING.xs,
+    marginTop: 1,
+  },
+  cleanSlateTitle: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#0369A1',
+    fontSize: 12,
+  },
+  cleanSlateText: {
+    ...TYPOGRAPHY.caption,
+    color: '#0284C7',
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
   },
 });
 

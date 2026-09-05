@@ -105,13 +105,12 @@ const STORAGE_KEYS = {
   ADMINS: '@chitflow:admins',
 };
 
-const DEFAULT_ADMINS: AdminCredentials[] = [
-  { username: 'admin', password: 'admin123' }
-];
+const DEFAULT_ADMINS: AdminCredentials[] = [];
+const CLEAN_SLATE_KEY = '@chitflow:clean_slate_reset_v5';
 
 export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentRole, setCurrentRoleState] = useState<UserRole>('admin');
-  const [selectedCustomerId, setSelectedCustomerIdState] = useState<string>('cust-1'); // default to Ravi
+  const [selectedCustomerId, setSelectedCustomerIdState] = useState<string>('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [schemes, setSchemes] = useState<Scheme[]>([]);
@@ -128,6 +127,15 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   useEffect(() => {
     const loadSavedData = async () => {
       try {
+        const isCleanReset = await AsyncStorage.getItem(CLEAN_SLATE_KEY);
+        if (isCleanReset !== 'true') {
+          // Clear any old mock data from previous sessions completely
+          await AsyncStorage.clear();
+          await AsyncStorage.setItem(CLEAN_SLATE_KEY, 'true');
+          await initializeData();
+          return;
+        }
+
         const savedRole = await AsyncStorage.getItem(STORAGE_KEYS.ROLE);
         const savedSelectedCust = await AsyncStorage.getItem(STORAGE_KEYS.SELECTED_CUST);
         const savedCustomers = await AsyncStorage.getItem(STORAGE_KEYS.CUSTOMERS);
@@ -146,111 +154,34 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (savedIsLoggedIn === 'true') setIsLoggedIn(true);
         if (savedCurrentUserId) setCurrentUserId(savedCurrentUserId);
 
-        // Load admins with robust default fallback
+        // Load admins (empty by default if none registered yet)
         if (savedAdmins) {
           try {
             const parsed: AdminCredentials[] = JSON.parse(savedAdmins);
-            const hasDefault = parsed.some((a) => a.username.toLowerCase() === 'admin');
-            const mergedAdmins = hasDefault ? parsed : [...DEFAULT_ADMINS, ...parsed];
-            setAdmins(mergedAdmins);
+            setAdmins(parsed);
           } catch {
-            await AsyncStorage.setItem(STORAGE_KEYS.ADMINS, JSON.stringify(DEFAULT_ADMINS));
-            setAdmins(DEFAULT_ADMINS);
+            setAdmins([]);
           }
         } else {
-          await AsyncStorage.setItem(STORAGE_KEYS.ADMINS, JSON.stringify(DEFAULT_ADMINS));
-          setAdmins(DEFAULT_ADMINS);
+          setAdmins([]);
         }
 
         if (savedCustomers && savedPayments && savedSchemes && savedReceipts) {
-          const parsedCustomers: Customer[] = JSON.parse(savedCustomers).map((c: Customer) => {
-            const initial = INITIAL_CUSTOMERS.find((init) => init.id === c.id);
-            return {
-              ...c,
-              enrolledSchemeIds: c.enrolledSchemeIds || initial?.enrolledSchemeIds || (c.schemeId ? [c.schemeId] : []),
-              enrolledSchemes: c.enrolledSchemes || initial?.enrolledSchemes,
-              email: c.email || initial?.email,
-              address: c.address || initial?.address,
-              city: c.city || initial?.city,
-              pincode: c.pincode || initial?.pincode,
-              occupation: c.occupation || initial?.occupation,
-              nomineeName: c.nomineeName || initial?.nomineeName,
-              nomineeRelation: c.nomineeRelation || initial?.nomineeRelation,
-              idProofType: c.idProofType || initial?.idProofType,
-              idProofNumber: c.idProofNumber || initial?.idProofNumber,
-            };
-          });
+          const parsedCustomers: Customer[] = JSON.parse(savedCustomers);
           const parsedPayments: Payment[] = JSON.parse(savedPayments);
           const parsedReceipts: Receipt[] = JSON.parse(savedReceipts);
-          const parsedSchemes: Scheme[] = JSON.parse(savedSchemes).map((s: Scheme) => {
-            const initialMatch = INITIAL_SCHEMES.find((init) => init.id === s.id);
-            const interest = (s.interestAmount !== undefined && s.interestAmount > 0)
-              ? s.interestAmount
-              : (initialMatch?.interestAmount ?? (s.totalAmount * 0.08));
-            const payout = (s.payoutAmount !== undefined && s.payoutAmount > 0 && s.payoutAmount < s.totalAmount)
-              ? s.payoutAmount
-              : Math.max(0, s.totalAmount - interest);
-            return {
-              ...s,
-              interestAmount: interest,
-              payoutAmount: payout,
-            };
-          });
-
-          // Reconcile: Ensure every payment in parsedPayments has a receipt
-          const receiptMap = new Map<string, Receipt>();
-          parsedReceipts.forEach((r) => {
-            receiptMap.set(r.id, r);
-            if (r.paymentId) receiptMap.set(r.paymentId, r);
-          });
-
-          const reconciledReceipts = [...parsedReceipts];
-          parsedPayments.forEach((p) => {
-            if (!receiptMap.has(p.receiptId) && !receiptMap.has(p.id)) {
-              const cust = parsedCustomers.find((c) => c.id === p.customerId);
-              const sch = parsedSchemes.find((s) => s.id === cust?.schemeId);
-              const pDate = new Date(p.date);
-              const year = isNaN(pDate.getFullYear()) ? '2026' : pDate.getFullYear().toString();
-              const month = isNaN(pDate.getMonth()) ? '08' : (pDate.getMonth() + 1).toString().padStart(2, '0');
-              const suffix = p.id.replace(/[^0-9]/g, '').slice(-4).padStart(4, '0') || '1001';
-
-              const newRec: Receipt = {
-                id: p.receiptId || `rec-${p.id}`,
-                paymentId: p.id,
-                receiptNumber: `REC-${year}${month}-${suffix}`,
-                customerId: p.customerId,
-                customerName: p.customerName || cust?.name || 'Customer',
-                date: p.date,
-                amount: p.amount,
-                method: `${p.method} payment`,
-                schemeName: p.schemeName || sch?.name || 'Chit Scheme',
-                remainingBalance: Math.max(0, (cust?.amountGiven || 50000) - p.amount),
-                referenceId: `REF${p.id.replace(/[^0-9]/g, '').slice(-9).padStart(9, '9')}`,
-              };
-
-              reconciledReceipts.push(newRec);
-              receiptMap.set(newRec.id, newRec);
-              receiptMap.set(p.id, newRec);
-            }
-          });
-
-          reconciledReceipts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          const parsedSchemes: Scheme[] = JSON.parse(savedSchemes);
 
           setCustomers(parsedCustomers);
           setPayments(parsedPayments);
           setSchemes(parsedSchemes);
-          setReceipts(reconciledReceipts);
-
-          if (reconciledReceipts.length !== parsedReceipts.length) {
-            AsyncStorage.setItem(STORAGE_KEYS.RECEIPTS, JSON.stringify(reconciledReceipts)).catch(console.error);
-          }
+          setReceipts(parsedReceipts);
         } else {
-          // No saved data, load initial mocks and save them
+          // No saved data, initialize clean slate
           await initializeData();
         }
       } catch (error) {
         console.error('Error loading local data:', error);
-        // Fallback to mocks
         await initializeData();
       } finally {
         setIsLoading(false);
@@ -267,14 +198,22 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       await AsyncStorage.setItem(STORAGE_KEYS.SCHEMES, JSON.stringify(INITIAL_SCHEMES));
       await AsyncStorage.setItem(STORAGE_KEYS.RECEIPTS, JSON.stringify(INITIAL_RECEIPTS));
       await AsyncStorage.setItem(STORAGE_KEYS.ADMINS, JSON.stringify(DEFAULT_ADMINS));
+      await AsyncStorage.setItem(STORAGE_KEYS.IS_LOGGED_IN, 'false');
+      await AsyncStorage.removeItem(STORAGE_KEYS.ROLE);
+      await AsyncStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID);
+      await AsyncStorage.removeItem(STORAGE_KEYS.SELECTED_CUST);
       
       setCustomers(INITIAL_CUSTOMERS);
       setPayments(INITIAL_PAYMENTS);
       setSchemes(INITIAL_SCHEMES);
       setReceipts(INITIAL_RECEIPTS);
       setAdmins(DEFAULT_ADMINS);
+      setIsLoggedIn(false);
+      setCurrentUserRole(null);
+      setCurrentUserId(null);
+      setSelectedCustomerIdState('');
     } catch (e) {
-      console.error('Failed to initialize mock storage data', e);
+      console.error('Failed to initialize clean slate storage data', e);
     }
   };
 
@@ -282,9 +221,10 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setIsLoading(true);
     try {
       await AsyncStorage.clear();
+      await AsyncStorage.setItem(CLEAN_SLATE_KEY, 'true');
       await initializeData();
       setCurrentRoleState('admin');
-      setSelectedCustomerIdState('cust-1');
+      setSelectedCustomerIdState('');
       setIsLoggedIn(false);
       setCurrentUserRole(null);
       setCurrentUserId(null);
@@ -595,11 +535,15 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Authentication & Registration Methods
   const loginAsAdmin = (username: string, password: string) => {
     const trimmedUser = username.trim().toLowerCase();
-    const admin = admins.find((a) => a.username.toLowerCase() === trimmedUser) ||
-      (trimmedUser === 'admin' ? DEFAULT_ADMINS[0] : undefined);
+    const admin = admins.find((a) => a.username.toLowerCase() === trimmedUser);
 
     if (!admin) {
-      return { success: false, error: 'Admin username not registered' };
+      return {
+        success: false,
+        error: admins.length === 0
+          ? 'No Admin registered yet. Please switch to the "Sign Up / Register" tab to register your Admin account.'
+          : 'Admin username not registered. Please check or sign up.',
+      };
     }
     if (admin.password !== password) {
       return { success: false, error: 'Incorrect password' };
@@ -620,7 +564,12 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const loginAsCustomer = (phone: string, pin: string) => {
     const customer = customers.find((c) => c.phone === phone);
     if (!customer) {
-      return { success: false, error: 'Phone number not registered' };
+      return {
+        success: false,
+        error: customers.length === 0
+          ? 'No Member accounts registered yet. Please switch to "Sign Up / Register" tab or register via Admin.'
+          : 'Phone number not registered. Please sign up or contact Admin.',
+      };
     }
     if (customer.pin !== pin) {
       return { success: false, error: 'Incorrect 4-digit PIN' };
