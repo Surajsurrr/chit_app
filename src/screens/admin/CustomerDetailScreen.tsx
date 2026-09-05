@@ -35,18 +35,24 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
     );
   }
 
-  const scheme = schemes.find((s) => s.id === customer.schemeId);
-  const enrolledSnapshot = customer.enrolledSchemes?.find((es) => es.schemeId === customer.schemeId)
-    || customer.enrolledSchemes?.[customer.enrolledSchemes.length - 1];
-  const schemeName = enrolledSnapshot?.schemeName || scheme?.name || 'Chit Scheme';
-  const schemeValue = enrolledSnapshot?.totalAmount || customer.amountGiven;
+  const hasScheme = Boolean(
+    (customer.schemeId && customer.schemeId.trim() !== '') ||
+    (customer.enrolledSchemes && customer.enrolledSchemes.length > 0)
+  );
+  const scheme = hasScheme ? schemes.find((s) => s.id === customer.schemeId) : null;
+  const enrolledSnapshot = hasScheme
+    ? (customer.enrolledSchemes?.find((es) => es.schemeId === customer.schemeId)
+      || customer.enrolledSchemes?.[customer.enrolledSchemes.length - 1])
+    : null;
+  const schemeName = hasScheme ? (enrolledSnapshot?.schemeName || scheme?.name || 'Chit Scheme') : 'No Scheme Enrolled Yet';
+  const schemeValue = enrolledSnapshot?.totalAmount || customer.amountGiven || 0;
   const interestAmount = enrolledSnapshot?.interestAmount ?? scheme?.interestAmount ?? 0;
   const payoutAmount = enrolledSnapshot?.payoutAmount ?? (scheme?.payoutAmount ?? Math.max(0, schemeValue - interestAmount));
 
   const stats = getCustomerStats(customerId);
   const customerPayments = payments.filter((p) => p.customerId === customerId);
   const statusInfo = getPaymentStatusInfo(customer.nextPaymentDate, stats.remainingAmount, customer.frequency);
-  const isOverdue = statusInfo.isOverdue;
+  const isOverdue = hasScheme && statusInfo.isOverdue;
 
   const handleSendMessage = () => {
     let defaultMsg = '';
@@ -153,16 +159,27 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
 
         {/* Scheme & Payment Terms Card */}
         <Text style={styles.sectionTitle}>Collection Scheme & Payout Details</Text>
-        <Card style={styles.infoCard}>
-          <View style={styles.lockedContractBadge}>
-            <Text style={styles.lockedContractIcon}>🔒</Text>
-            <View style={{ flex: 1, marginLeft: SPACING.xs }}>
-              <Text style={styles.lockedContractTitle}>PERMANENT ENROLLED CONTRACT</Text>
-              <Text style={styles.lockedContractSub}>
-                Agreed at enrollment ({formatDateShort(enrolledSnapshot?.enrolledAt || customer.startDate)}) · Terms locked forever
+        {!hasScheme ? (
+          <Card style={styles.infoCard}>
+            <View style={{ alignItems: 'center', paddingVertical: SPACING.md }}>
+              <Text style={{ fontSize: 28, marginBottom: SPACING.xs }}>🪙</Text>
+              <Text style={styles.emptyContractTitle}>No Scheme Enrolled Yet</Text>
+              <Text style={styles.emptyContractText}>
+                This member registered on the portal but has not availed any chit scheme yet. Once they complete their profile and choose a scheme, the contract terms will appear here.
               </Text>
             </View>
-          </View>
+          </Card>
+        ) : (
+          <Card style={styles.infoCard}>
+            <View style={styles.lockedContractBadge}>
+              <Text style={styles.lockedContractIcon}>🔒</Text>
+              <View style={{ flex: 1, marginLeft: SPACING.xs }}>
+                <Text style={styles.lockedContractTitle}>PERMANENT ENROLLED CONTRACT</Text>
+                <Text style={styles.lockedContractSub}>
+                  Agreed at enrollment ({formatDateShort(enrolledSnapshot?.enrolledAt || customer.startDate)}) · Terms locked forever
+                </Text>
+              </View>
+            </View>
 
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Chit Scheme</Text>
@@ -226,6 +243,14 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
             </Text>
           </TouchableOpacity>
 
+            <TouchableOpacity
+              style={styles.detailMessageBtn}
+              onPress={() => navigation.navigate('Schemes')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.allSchemesBtnText}>View All Master Scheme Templates →</Text>
+            </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.detailMessageBtn}
             onPress={handleSendMessage}
@@ -234,6 +259,7 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
             <Text style={styles.detailMessageBtnText}>💬 Send Payment Reminder Message</Text>
           </TouchableOpacity>
         </Card>
+        )}
 
         {/* Customer Profile & Contact Details Card */}
         <Text style={styles.sectionTitle}>Customer Profile & Contact Info</Text>
@@ -657,6 +683,23 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     fontStyle: 'italic',
     fontWeight: 'normal',
+  },
+  allSchemesBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.secondary,
+  },
+  emptyContractTitle: {
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginBottom: 4,
+  },
+  emptyContractText: {
+    ...TYPOGRAPHY.bodyMedium,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 20,
+    maxWidth: 380,
   },
 });
 

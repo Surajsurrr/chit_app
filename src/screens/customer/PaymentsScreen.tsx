@@ -43,9 +43,13 @@ export const PaymentsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   }
 
   const stats = getCustomerStats(customer.id);
+  const hasAvailedScheme = Boolean(
+    (customer.schemeId && customer.schemeId.trim() !== '') ||
+    (customer.enrolledSchemes && customer.enrolledSchemes.length > 0)
+  );
   const customerPayments = payments.filter((p) => p.customerId === customer.id);
   const statusInfo = getPaymentStatusInfo(customer.nextPaymentDate, stats.remainingAmount, customer.frequency);
-  const isOverdue = statusInfo.isOverdue;
+  const isOverdue = hasAvailedScheme && statusInfo.isOverdue;
 
   const handleOpenPay = () => {
     setPayAmount(customer.collectionAmount.toString());
@@ -81,7 +85,19 @@ export const PaymentsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Due Card */}
-        {stats.remainingAmount > 0 ? (
+        {!hasAvailedScheme ? (
+          <Card style={styles.dueCard}>
+            <View style={styles.noSchemeDueBox}>
+              <Text style={styles.noSchemeDueIcon}>ℹ️</Text>
+              <View style={{ flex: 1, marginLeft: SPACING.sm }}>
+                <Text style={styles.noSchemeDueTitle}>No Scheme Availed Yet</Text>
+                <Text style={styles.noSchemeDueText}>
+                  You do not have any active scheme installments. Complete your profile and enroll in a scheme to start payments.
+                </Text>
+              </View>
+            </View>
+          </Card>
+        ) : stats.remainingAmount > 0 ? (
           <Card style={styles.dueCard}>
             {isOverdue && (
               <View style={styles.overdueHeaderBadge}>
@@ -426,6 +442,25 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.captionBold,
     color: COLORS.danger,
     marginBottom: SPACING.md,
+  },
+  noSchemeDueBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.xs,
+  },
+  noSchemeDueIcon: {
+    fontSize: 24,
+  },
+  noSchemeDueTitle: {
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  noSchemeDueText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginTop: 2,
+    lineHeight: 16,
   },
   modalLabel: {
     ...TYPOGRAPHY.captionBold,

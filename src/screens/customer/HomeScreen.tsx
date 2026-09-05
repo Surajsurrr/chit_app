@@ -44,11 +44,17 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   }
 
   const isCustProfileComplete = isCustomerProfileComplete(customer.id);
-  const scheme = schemes.find((s) => s.id === customer.schemeId);
-  const enrolledSnapshot = customer.enrolledSchemes?.find((es) => es.schemeId === customer.schemeId)
-    || customer.enrolledSchemes?.[customer.enrolledSchemes.length - 1];
-  const activeSchemeName = enrolledSnapshot?.schemeName || scheme?.name || 'Active Scheme';
-  const activeSchemeValue = enrolledSnapshot?.totalAmount || customer.amountGiven;
+  const hasAvailedScheme = Boolean(
+    (customer.schemeId && customer.schemeId.trim() !== '') ||
+    (customer.enrolledSchemes && customer.enrolledSchemes.length > 0)
+  );
+  const scheme = hasAvailedScheme ? schemes.find((s) => s.id === customer.schemeId) : null;
+  const enrolledSnapshot = hasAvailedScheme
+    ? (customer.enrolledSchemes?.find((es) => es.schemeId === customer.schemeId)
+      || customer.enrolledSchemes?.[customer.enrolledSchemes.length - 1])
+    : null;
+  const activeSchemeName = enrolledSnapshot?.schemeName || scheme?.name || 'No Scheme Availed';
+  const activeSchemeValue = enrolledSnapshot?.totalAmount || customer.amountGiven || 0;
   const activeInterest = enrolledSnapshot?.interestAmount ?? scheme?.interestAmount ?? 0;
   const activePayout = enrolledSnapshot?.payoutAmount ?? (scheme?.payoutAmount ?? Math.max(0, activeSchemeValue - activeInterest));
 
@@ -60,10 +66,10 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     ? receipts.find((r) => r.paymentId === latestPayment.id || r.id === latestPayment.receiptId)
     : null;
   const statusInfo = getPaymentStatusInfo(customer.nextPaymentDate, stats.remainingAmount, customer.frequency);
-  const isOverdue = statusInfo.isOverdue;
+  const isOverdue = hasAvailedScheme && statusInfo.isOverdue;
 
   const handleSelectScheme = (selectedScheme: Scheme) => {
-    if (selectedScheme.id === customer.schemeId) return;
+    if (hasAvailedScheme && selectedScheme.id === customer.schemeId) return;
 
     // 1. Mandatory Admin Profile Setup Check
     if (!isAdminProfileComplete) {
@@ -181,8 +187,40 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           </Card>
         )}
 
-        {/* Next Payment Card (View Only with Dynamic Green/Red Shade) */}
-        {stats.remainingAmount > 0 ? (
+        {/* Next Payment Card or Onboarding Prompt */}
+        {!hasAvailedScheme ? (
+          <Card style={styles.noSchemeHeroCard}>
+            <View style={styles.noSchemeHeroHeader}>
+              <View style={styles.noSchemeHeroBadge}>
+                <Text style={styles.noSchemeHeroBadgeText}>📋 GET STARTED</Text>
+              </View>
+              <Text style={styles.noSchemeHeroStep}>
+                {!isCustProfileComplete ? 'Step 1: Setup Profile' : 'Step 2: Choose Scheme'}
+              </Text>
+            </View>
+            <Text style={styles.noSchemeHeroTitle}>No Scheme Availed Yet</Text>
+            <Text style={styles.noSchemeHeroDesc}>
+              {!isCustProfileComplete
+                ? 'Mandatory Requirement: Please complete your profile details (Email and Residential Address) in the Profile tab to unlock scheme enrollment.'
+                : 'Your profile is verified! Select an organizer chit scheme below to avail your net payout and start saving.'}
+            </Text>
+            <TouchableOpacity
+              style={styles.noSchemeHeroBtn}
+              onPress={() => {
+                if (!isCustProfileComplete) {
+                  navigation.navigate('Profile');
+                } else {
+                  navigation.navigate('MySchemes');
+                }
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.noSchemeHeroBtnText}>
+                {!isCustProfileComplete ? 'Complete Profile Setup →' : 'Explore & Avail Schemes →'}
+              </Text>
+            </TouchableOpacity>
+          </Card>
+        ) : stats.remainingAmount > 0 ? (
           <Card style={[styles.nextPayCard, isOverdue ? styles.overdueNextPayCard : styles.upToDateNextPayCard]}>
             {isOverdue ? (
               <>
@@ -236,7 +274,18 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
         {/* My Active Chit Scheme Section */}
         <Text style={styles.sectionTitle}>My Chit Scheme & Payout Details</Text>
-        <Card style={styles.schemeCard}>
+        {!hasAvailedScheme ? (
+          <Card style={styles.emptySchemeCard}>
+            <View style={styles.emptySchemeIconBox}>
+              <Text style={styles.emptySchemeIcon}>🪙</Text>
+            </View>
+            <Text style={styles.emptySchemeTitle}>No Scheme Availed Yet</Text>
+            <Text style={styles.emptySchemeText}>
+              In the beginning, no scheme is assigned to your account. Complete your profile setup and select a scheme from the available list below to avail your net payout.
+            </Text>
+          </Card>
+        ) : (
+          <Card style={styles.schemeCard}>
           <View style={styles.lockedTermsHeader}>
             <Text style={styles.lockedTermsIcon}>🔒</Text>
             <View style={{ flex: 1, marginLeft: SPACING.xs }}>
@@ -279,13 +328,14 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           {/* Customer Explanation Note */}
           <View style={styles.customerNoticeBox}>
             <Text style={styles.noticeIcon}>ℹ️</Text>
-            <Text style={styles.noticeText}>
+<Text style={styles.noticeText}>
               {scheme?.description ||
                 `You receive a net payout of ₹${activePayout.toLocaleString('en-IN')} upfront (after ₹${activeInterest.toLocaleString('en-IN')} interest deduction), and repay ₹${activeSchemeValue.toLocaleString('en-IN')} across scheduled installments.`}
               {'\n'}• Your enrolled terms are locked forever. Future modifications by admin to general scheme templates will never affect your agreement.
             </Text>
           </View>
         </Card>
+      )}
 
         {/* Available Admin Schemes Section */}
         <View style={styles.sectionHeaderBox}>
@@ -330,7 +380,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             )}
 
             {schemes.map((s) => {
-              const isCurrent = s.id === customer.schemeId;
+              const isCurrent = hasAvailedScheme && (s.id === customer.schemeId);
               const interest = s.interestAmount || 0;
               const interestRate = ((interest / s.totalAmount) * 100).toFixed(1);
               const payout = s.payoutAmount || Math.max(0, s.totalAmount - interest);
@@ -359,7 +409,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                         activeOpacity={0.8}
                       >
                         <Text style={styles.selectSchemeBtnText}>
-                          {isCustProfileComplete ? 'Choose Scheme →' : 'Complete Profile'}
+                          {isCustProfileComplete ? 'Avail Scheme →' : 'Complete Profile'}
                         </Text>
                       </TouchableOpacity>
                     )}
@@ -1056,6 +1106,96 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.captionBold,
     color: COLORS.white,
     fontSize: 11,
+  },
+  // No Scheme Hero Card
+  noSchemeHeroCard: {
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1.5,
+    borderColor: '#7DD3FC',
+    borderRadius: 16,
+    padding: SPACING.lg,
+    marginBottom: SPACING.lg,
+  },
+  noSchemeHeroHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  noSchemeHeroBadge: {
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  noSchemeHeroBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#0284C7',
+    fontSize: 10,
+    letterSpacing: 0.5,
+  },
+  noSchemeHeroStep: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#0369A1',
+    fontSize: 11,
+  },
+  noSchemeHeroTitle: {
+    ...TYPOGRAPHY.h3,
+    color: '#0C4A6E',
+    marginBottom: 4,
+  },
+  noSchemeHeroDesc: {
+    ...TYPOGRAPHY.bodyMedium,
+    color: '#0369A1',
+    lineHeight: 20,
+    marginBottom: SPACING.md,
+  },
+  noSchemeHeroBtn: {
+    backgroundColor: COLORS.secondary,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noSchemeHeroBtnText: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.white,
+  },
+  // Empty Scheme Card (Under My Chit Scheme & Payout Details)
+  emptySchemeCard: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: 16,
+    padding: SPACING.xl,
+    alignItems: 'center',
+    marginBottom: SPACING.xl,
+  },
+  emptySchemeIconBox: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.sm,
+  },
+  emptySchemeIcon: {
+    fontSize: 26,
+  },
+  emptySchemeTitle: {
+    ...TYPOGRAPHY.h3,
+    color: COLORS.primary,
+    marginBottom: 4,
+  },
+  emptySchemeText: {
+    ...TYPOGRAPHY.bodyMedium,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 20,
+    maxWidth: 380,
   },
 });
 

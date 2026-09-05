@@ -41,7 +41,9 @@ export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   }
 
   const stats = getCustomerStats(customer.id);
-  const enrolledIds = customer.enrolledSchemeIds || (customer.schemeId ? [customer.schemeId] : []);
+  const enrolledIds = (customer.enrolledSchemeIds && customer.enrolledSchemeIds.length > 0)
+    ? customer.enrolledSchemeIds
+    : (customer.schemeId && customer.schemeId.trim() !== '' ? [customer.schemeId] : []);
   const availedSchemes = schemes.filter((s) => enrolledIds.includes(s.id));
   const otherAvailableSchemes = schemes.filter((s) => !enrolledIds.includes(s.id));
   const isCustProfileComplete = isCustomerProfileComplete(customer.id);
@@ -129,8 +131,24 @@ export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
 
         {availedSchemes.length === 0 ? (
           <Card style={styles.emptyCard}>
+            <View style={styles.emptyIconBox}>
+              <Text style={styles.emptyIcon}>🪙</Text>
+            </View>
             <Text style={styles.emptyTitle}>No Availed Schemes Yet</Text>
-            <Text style={styles.emptyText}>Explore the available admin schemes below and click "Avail Scheme" to join.</Text>
+            <Text style={styles.emptyText}>
+              {!isCustProfileComplete
+                ? 'You have not enrolled in any chit scheme yet. In the beginning, your scheme list is empty until you complete your profile setup (Email & Address) and choose an available scheme below.'
+                : 'You have not enrolled in any chit scheme yet. Explore the available organizer schemes below and tap "Avail Scheme" to join.'}
+            </Text>
+            {!isCustProfileComplete && (
+              <TouchableOpacity
+                style={styles.emptyProfileBtn}
+                onPress={() => navigation.navigate('Profile')}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.emptyProfileBtnText}>Complete Profile Setup →</Text>
+              </TouchableOpacity>
+            )}
           </Card>
         ) : (
           availedSchemes.map((s) => {
@@ -423,6 +441,31 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     textAlign: 'center',
     marginTop: SPACING.xs,
+    lineHeight: 20,
+    maxWidth: 380,
+  },
+  emptyIconBox: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.sm,
+  },
+  emptyIcon: {
+    fontSize: 24,
+  },
+  emptyProfileBtn: {
+    marginTop: SPACING.md,
+    backgroundColor: COLORS.secondary,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  emptyProfileBtnText: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.white,
   },
   availedCard: {
     marginBottom: SPACING.lg,

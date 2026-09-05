@@ -210,7 +210,25 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           const parsedReceipts: Receipt[] = JSON.parse(savedReceipts);
           const parsedSchemes: Scheme[] = JSON.parse(savedSchemes);
 
-          setCustomers(parsedCustomers);
+          // Business Rule: A newly registered customer who has not completed profile setup
+          // and has 0 payments should NOT have a default scheme auto-assigned.
+          const sanitizedCustomers = parsedCustomers.map((c) => {
+            const hasPayments = parsedPayments.some((p) => p.customerId === c.id);
+            const isProfileDone = Boolean(c.email && c.email.trim() && c.address && c.address.trim());
+            if (!hasPayments && !isProfileDone && c.schemeId === 'scheme-1') {
+              return {
+                ...c,
+                schemeId: '',
+                amountGiven: 0,
+                collectionAmount: 0,
+                enrolledSchemeIds: [],
+                enrolledSchemes: [],
+              };
+            }
+            return c;
+          });
+
+          setCustomers(sanitizedCustomers);
           setPayments(parsedPayments);
           setSchemes(parsedSchemes);
           setReceipts(parsedReceipts);
@@ -296,29 +314,33 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const addCustomer = async (newCustomerData: Omit<Customer, 'id' | 'nextPaymentDate'>) => {
     const newId = `cust-${Date.now()}`;
-    const scheme = schemes.find((s) => s.id === newCustomerData.schemeId);
+    const hasScheme = Boolean(newCustomerData.schemeId && newCustomerData.schemeId.trim() !== '');
+    const scheme = hasScheme ? schemes.find((s) => s.id === newCustomerData.schemeId) : null;
     const interest = scheme?.interestAmount ?? 0;
     const payout = scheme?.payoutAmount ?? Math.max(0, newCustomerData.amountGiven - interest);
 
-    const enrolledSnapshot: EnrolledScheme = {
+    const enrolledSnapshot: EnrolledScheme | null = (hasScheme && scheme) ? {
       schemeId: newCustomerData.schemeId,
-      schemeName: scheme?.name || 'Chit Scheme',
+      schemeName: scheme.name,
       totalAmount: newCustomerData.amountGiven,
       interestAmount: interest,
       payoutAmount: payout,
       collectionAmount: newCustomerData.collectionAmount,
       frequency: newCustomerData.frequency,
-      durationWeeksOrMonths: scheme?.durationWeeksOrMonths || 10,
+      durationWeeksOrMonths: scheme.durationWeeksOrMonths || 10,
       enrolledAt: new Date().toISOString(),
-    };
+    } : null;
 
     const newCustomer: Customer = {
       ...newCustomerData,
       id: newId,
+      schemeId: hasScheme ? newCustomerData.schemeId : '',
+      amountGiven: hasScheme ? newCustomerData.amountGiven : 0,
+      collectionAmount: hasScheme ? newCustomerData.collectionAmount : 0,
       // For a new customer, next payment date is initial startDate
       nextPaymentDate: newCustomerData.startDate,
-      enrolledSchemeIds: [newCustomerData.schemeId],
-      enrolledSchemes: [enrolledSnapshot],
+      enrolledSchemeIds: enrolledSnapshot ? [newCustomerData.schemeId] : [],
+      enrolledSchemes: enrolledSnapshot ? [enrolledSnapshot] : [],
     };
 
     const updated = [newCustomer, ...customers];
@@ -703,20 +725,33 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return { success: false, error: 'Phone number is already registered' };
     }
 
-    const selectedScheme = schemeId 
-      ? schemes.find((s) => s.id === schemeId) 
-      : (schemes.length > 0 ? schemes[0] : null);
+    const selectedScheme = schemeId ? schemes.find((s) => s.id === schemeId) : null;
 
-    addCustomer({
-      name: name.trim(),
-      phone: phone.trim(),
-      pin: pin.trim(),
-      schemeId: selectedScheme ? selectedScheme.id : 'scheme-1',
-      amountGiven: selectedScheme ? selectedScheme.totalAmount : 50000,
-      collectionAmount: selectedScheme ? selectedScheme.collectionAmount : 1000,
-      frequency: selectedScheme ? selectedScheme.frequency : 'daily',
-      startDate: new Date().toISOString(),
-    });
+    if (selectedScheme) {
+      addCustomer({
+        name: name.trim(),
+        phone: phone.trim(),
+        pin: pin.trim(),
+        schemeId: selectedScheme.id,
+        amountGiven: selectedScheme.totalAmount,
+        collectionAmount: selectedScheme.collectionAmount,
+        frequency: selectedScheme.frequency,
+        startDate: new Date().toISOString(),
+      });
+    } else {
+      // In the beginning, nothing should be there.
+      // Customer starts with NO scheme until they complete profile and avail one.
+      addCustomer({
+        name: name.trim(),
+        phone: phone.trim(),
+        pin: pin.trim(),
+        schemeId: '',
+        amountGiven: 0,
+        collectionAmount: 0,
+        frequency: 'monthly',
+        startDate: new Date().toISOString(),
+      });
+    }
 
     return { success: true };
   };

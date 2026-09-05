@@ -34,11 +34,17 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
 
   const customerData = customers.map((c) => {
     const stats = getCustomerStats(c.id);
-    const scheme = schemes.find((s) => s.id === c.schemeId);
-    const enrolledSnapshot = c.enrolledSchemes?.find((es) => es.schemeId === c.schemeId)
-      || c.enrolledSchemes?.[c.enrolledSchemes.length - 1];
-    const schemeName = enrolledSnapshot?.schemeName || scheme?.name || 'Chit Scheme';
-    const isSettled = stats.remainingAmount === 0;
+    const hasScheme = Boolean(
+      (c.schemeId && c.schemeId.trim() !== '') ||
+      (c.enrolledSchemes && c.enrolledSchemes.length > 0)
+    );
+    const scheme = hasScheme ? schemes.find((s) => s.id === c.schemeId) : null;
+    const enrolledSnapshot = hasScheme
+      ? (c.enrolledSchemes?.find((es) => es.schemeId === c.schemeId)
+        || c.enrolledSchemes?.[c.enrolledSchemes.length - 1])
+      : null;
+    const schemeName = hasScheme ? (enrolledSnapshot?.schemeName || scheme?.name || 'Chit Scheme') : 'No Scheme Availed';
+    const isSettled = hasScheme && stats.remainingAmount === 0;
     const statusInfo = getPaymentStatusInfo(c.nextPaymentDate, stats.remainingAmount, c.frequency);
     return {
       customer: c,
@@ -47,6 +53,7 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
       schemeName,
       isSettled,
       statusInfo,
+      hasScheme,
     };
   });
 
@@ -111,7 +118,7 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   };
 
   const renderCustomerItem = ({ item }: { item: typeof customerData[0] }) => {
-    const { customer, stats, scheme, schemeName, isSettled, statusInfo } = item;
+    const { customer, stats, scheme, schemeName, isSettled, statusInfo, hasScheme } = item;
 
     return (
       <View style={styles.cardWrapper}>
@@ -128,7 +135,9 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                 <View
                   style={[
                     styles.memberBadge,
-                    isSettled
+                    !hasScheme
+                      ? styles.pendingBadge
+                      : isSettled
                       ? styles.settledBadge
                       : statusInfo.isOverdue
                       ? styles.overdueBadge
@@ -140,7 +149,9 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                   <Text
                     style={[
                       styles.memberBadgeText,
-                      isSettled
+                      !hasScheme
+                        ? styles.pendingBadgeText
+                        : isSettled
                         ? styles.settledBadgeText
                         : statusInfo.isOverdue
                         ? styles.overdueBadgeText
@@ -149,7 +160,9 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                         : styles.activeBadgeText,
                     ]}
                   >
-                    {isSettled
+                    {!hasScheme
+                      ? '📝 Pending Scheme'
+                      : isSettled
                       ? '✓ Fully Settled'
                       : statusInfo.isOverdue
                       ? `⚠️ ${statusInfo.statusText}`
@@ -161,13 +174,17 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
               </View>
               <Text style={styles.phoneText}>+91 {customer.phone}</Text>
               <Text style={styles.schemeTagText}>
-                {schemeName} · {formatFrequency(customer.frequency)}
+                {hasScheme ? `${schemeName} · ${formatFrequency(customer.frequency)}` : 'No Scheme Availed Yet'}
               </Text>
             </TouchableOpacity>
 
             {/* Action Buttons: Collected Button beside View Profile */}
             <View style={styles.headerButtonsContainer}>
-              {!isSettled ? (
+              {!hasScheme ? (
+                <View style={styles.noSchemeTag}>
+                  <Text style={styles.noSchemeTagText}>No Scheme</Text>
+                </View>
+              ) : !isSettled ? (
                 <TouchableOpacity
                   style={[styles.collectedBtn, statusInfo.isOverdue && styles.collectedBtnOverdue]}
                   onPress={() => handleOpenCollect(customer)}
@@ -684,6 +701,29 @@ const styles = StyleSheet.create({
   settledBadgeText: {
     ...TYPOGRAPHY.captionBold,
     color: '#059669',
+    fontSize: 10,
+  },
+  pendingBadge: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  pendingBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#B45309',
+    fontSize: 10,
+  },
+  noSchemeTag: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  noSchemeTagText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#64748B',
     fontSize: 10,
   },
   headerButtonsContainer: {
