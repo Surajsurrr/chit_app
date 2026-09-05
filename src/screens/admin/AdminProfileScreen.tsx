@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { useChitData } from '../../context/ChitDataContext';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
@@ -18,6 +19,7 @@ import Card from '../../components/Card';
 import FormInput from '../../components/FormInput';
 import Button from '../../components/Button';
 import { StatusBar } from 'expo-status-bar';
+import { lookupPincode } from '../../utils/pincodeService';
 
 export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const { currentAdmin, updateAdminProfile, getAdminStats, schemes, logout, isAdminProfileComplete } = useChitData();
@@ -34,6 +36,8 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
   const [editPassword, setEditPassword] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isFetchingLocation, setIsFetchingLocation] = useState(false);
+  const [locationHint, setLocationHint] = useState<string | null>(null);
 
   const adminName = currentAdmin?.name || currentAdmin?.username || 'Organizer Admin';
   const businessName = currentAdmin?.businessName || 'ChitFlow Organizer';
@@ -43,6 +47,27 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
     .join('')
     .slice(0, 2)
     .toUpperCase() || 'AD';
+
+  const handlePincodeChange = async (val: string) => {
+    setEditPincode(val);
+    setFormErrors((prev) => ({ ...prev, pincode: '' }));
+
+    const clean = val.replace(/[^0-9]/g, '');
+    if (clean.length === 6) {
+      setIsFetchingLocation(true);
+      setLocationHint('🔍 Detecting city & district...');
+      const res = await lookupPincode(clean);
+      setIsFetchingLocation(false);
+      if (res.success && res.city) {
+        setEditCity(res.city);
+        setLocationHint(`✓ Auto-detected: ${res.city}${res.state ? `, ${res.state}` : ''}`);
+      } else {
+        setLocationHint(null);
+      }
+    } else {
+      setLocationHint(null);
+    }
+  };
 
   const handleOpenEdit = () => {
     setEditName(currentAdmin?.name || '');
@@ -54,6 +79,8 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
     setEditPincode(currentAdmin?.pincode || '');
     setEditPassword('');
     setFormErrors({});
+    setLocationHint(null);
+    setIsFetchingLocation(false);
     setIsEditModalVisible(true);
   };
 
@@ -468,24 +495,53 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
                     label="City / District"
                     placeholder="e.g. Chennai"
                     value={editCity}
-                    onChangeText={(val) => setEditCity(val)}
+                    onChangeText={(val) => {
+                      setEditCity(val);
+                      setLocationHint(null);
+                    }}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
                   <FormInput
                     label="Postal Pincode"
-                    placeholder="e.g. 600017"
+                    placeholder="e.g. 600076"
                     value={editPincode}
-                    onChangeText={(val) => {
-                      setEditPincode(val);
-                      setFormErrors((prev) => ({ ...prev, pincode: '' }));
-                    }}
+                    onChangeText={handlePincodeChange}
                     keyboardType="numeric"
                     maxLength={6}
                     error={formErrors.pincode}
                   />
                 </View>
               </View>
+
+              {locationHint ? (
+                <View
+                  style={[
+                    styles.locationHintBox,
+                    locationHint.startsWith('✓')
+                      ? styles.locationHintSuccess
+                      : styles.locationHintLoading,
+                  ]}
+                >
+                  {isFetchingLocation && (
+                    <ActivityIndicator
+                      size="small"
+                      color={COLORS.secondary}
+                      style={{ marginRight: 6 }}
+                    />
+                  )}
+                  <Text
+                    style={[
+                      styles.locationHintText,
+                      locationHint.startsWith('✓')
+                        ? styles.locationHintSuccessText
+                        : styles.locationHintLoadingText,
+                    ]}
+                  >
+                    {locationHint}
+                  </Text>
+                </View>
+              ) : null}
 
               <Text style={styles.formSectionTitle}>SECURITY (OPTIONAL)</Text>
 
@@ -911,6 +967,35 @@ const styles = StyleSheet.create({
   },
   formRow: {
     flexDirection: 'row',
+  },
+  locationHintBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.sm + 4,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: -SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  locationHintSuccess: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  locationHintLoading: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  locationHintText: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 11,
+  },
+  locationHintSuccessText: {
+    color: '#065F46',
+  },
+  locationHintLoadingText: {
+    color: '#1D4ED8',
   },
   modalActions: {
     flexDirection: 'row',

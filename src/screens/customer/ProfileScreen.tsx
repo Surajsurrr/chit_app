@@ -19,6 +19,7 @@ import FormInput from '../../components/FormInput';
 import Button from '../../components/Button';
 import { formatDateLong, formatFrequency } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
+import { lookupPincode } from '../../utils/pincodeService';
 
 export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const {
@@ -54,9 +55,32 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   >('Aadhaar');
   const [editIdProofNumber, setEditIdProofNumber] = useState('');
   const [editPin, setEditPin] = useState('');
+  const [isFetchingLocation, setIsFetchingLocation] = useState(false);
+  const [locationHint, setLocationHint] = useState<string | null>(null);
 
   // Form validation errors
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  const handlePincodeChange = async (val: string) => {
+    setEditPincode(val);
+    setFormErrors((prev) => ({ ...prev, pincode: '' }));
+
+    const clean = val.replace(/[^0-9]/g, '');
+    if (clean.length === 6) {
+      setIsFetchingLocation(true);
+      setLocationHint('🔍 Detecting city & district...');
+      const res = await lookupPincode(clean);
+      setIsFetchingLocation(false);
+      if (res.success && res.city) {
+        setEditCity(res.city);
+        setLocationHint(`✓ Auto-detected: ${res.city}${res.state ? `, ${res.state}` : ''}`);
+      } else {
+        setLocationHint(null);
+      }
+    } else {
+      setLocationHint(null);
+    }
+  };
 
   if (!customer) {
     return (
@@ -94,6 +118,8 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     setEditIdProofNumber(customer.idProofNumber || '');
     setEditPin(customer.pin || '');
     setFormErrors({});
+    setLocationHint(null);
+    setIsFetchingLocation(false);
     setIsEditModalVisible(true);
   };
 
@@ -574,7 +600,10 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
                     label="City / Town"
                     placeholder="e.g. Chennai"
                     value={editCity}
-                    onChangeText={setEditCity}
+                    onChangeText={(val) => {
+                      setEditCity(val);
+                      setLocationHint(null);
+                    }}
                   />
                 </View>
                 <View style={{ flex: 1, marginLeft: SPACING.xs }}>
@@ -582,15 +611,42 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
                     label="Pincode (6 digits)"
                     placeholder="e.g. 600004"
                     value={editPincode}
-                    onChangeText={(val) => {
-                      setEditPincode(val);
-                      setFormErrors((prev) => ({ ...prev, pincode: '' }));
-                    }}
+                    onChangeText={handlePincodeChange}
                     keyboardType="numeric"
+                    maxLength={6}
                     error={formErrors.pincode}
                   />
                 </View>
               </View>
+
+              {locationHint ? (
+                <View
+                  style={[
+                    styles.locationHintBox,
+                    locationHint.startsWith('✓')
+                      ? styles.locationHintSuccess
+                      : styles.locationHintLoading,
+                  ]}
+                >
+                  {isFetchingLocation && (
+                    <ActivityIndicator
+                      size="small"
+                      color={COLORS.secondary}
+                      style={{ marginRight: 6 }}
+                    />
+                  )}
+                  <Text
+                    style={[
+                      styles.locationHintText,
+                      locationHint.startsWith('✓')
+                        ? styles.locationHintSuccessText
+                        : styles.locationHintLoadingText,
+                    ]}
+                  >
+                    {locationHint}
+                  </Text>
+                </View>
+              ) : null}
 
               {/* Form Category: KYC & Nominee */}
               <Text style={styles.formCategoryLabel}>OCCUPATION & KYC DETAILS</Text>
@@ -1193,6 +1249,35 @@ const styles = StyleSheet.create({
   },
   formRow2: {
     flexDirection: 'row',
+  },
+  locationHintBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.sm + 4,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: -SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  locationHintSuccess: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  locationHintLoading: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  locationHintText: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 11,
+  },
+  locationHintSuccessText: {
+    color: '#065F46',
+  },
+  locationHintLoadingText: {
+    color: '#1D4ED8',
   },
   idChipRow: {
     flexDirection: 'row',
