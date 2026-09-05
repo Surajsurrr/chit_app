@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,15 +6,13 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
-  Modal,
   Alert,
 } from 'react-native';
 import { useChitData } from '../../context/ChitDataContext';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
-import FormInput from '../../components/FormInput';
-import { formatFrequency, formatDateLong } from '../../utils/dateHelpers';
+import { formatFrequency } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
 import { Scheme } from '../../data/mockData';
 
@@ -24,19 +22,11 @@ export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     customers,
     schemes,
     getCustomerStats,
-    recordPayment,
     updateCustomerScheme,
     logout,
   } = useChitData();
 
   const customer = customers.find((c) => c.id === selectedCustomerId);
-
-  // Payment modal state
-  const [isPayModalVisible, setIsPayModalVisible] = useState(false);
-  const [payAmount, setPayAmount] = useState('');
-  const [payMethod, setPayMethod] = useState<'UPI' | 'Cash' | 'Card' | 'Bank Transfer'>('UPI');
-  const [payError, setPayError] = useState('');
-  const [selectedSchemeForPay, setSelectedSchemeForPay] = useState<Scheme | null>(null);
 
   if (!customer) {
     return (
@@ -51,31 +41,6 @@ export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   const enrolledIds = customer.enrolledSchemeIds || (customer.schemeId ? [customer.schemeId] : []);
   const availedSchemes = schemes.filter((s) => enrolledIds.includes(s.id));
   const otherAvailableSchemes = schemes.filter((s) => !enrolledIds.includes(s.id));
-
-  const handleOpenPay = (schemeToPay: Scheme) => {
-    setSelectedSchemeForPay(schemeToPay);
-    setPayAmount(schemeToPay.collectionAmount.toString());
-    setPayMethod('UPI');
-    setPayError('');
-    setIsPayModalVisible(true);
-  };
-
-  const handleMakePayment = () => {
-    const amount = parseFloat(payAmount);
-    if (isNaN(amount) || amount <= 0) {
-      setPayError('Please enter a valid amount');
-      return;
-    }
-
-    const result = recordPayment(customer.id, amount, payMethod);
-
-    if (result.success && result.receipt) {
-      setIsPayModalVisible(false);
-      navigation.navigate('ReceiptDetail', { receiptId: result.receipt.id });
-    } else {
-      setPayError(result.error || 'Payment failed to record');
-    }
-  };
 
   const handleAvailScheme = (schemeToAvail: Scheme) => {
     const interest = schemeToAvail.interestAmount || 0;
@@ -199,7 +164,7 @@ export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                 {isPrimary && (
                   <View style={styles.progressBox}>
                     <View style={styles.progressHeader}>
-                      <Text style={styles.progressLabel}>PAID SO FAR</Text>
+                      <Text style={styles.progressLabel}>COLLECTED SO FAR</Text>
                       <Text style={styles.progressVal}>
                         ₹{stats.paidAmount.toLocaleString('en-IN')} of ₹{s.totalAmount.toLocaleString('en-IN')} ({stats.progressPercentage}%)
                       </Text>
@@ -210,157 +175,82 @@ export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                   </View>
                 )}
 
-                {/* Actions */}
-                <View style={styles.actionRow}>
-                  <Button
-                    title={`Make Payment (₹${s.collectionAmount.toLocaleString('en-IN')})`}
-                    onPress={() => handleOpenPay(s)}
-                    style={styles.payBtn}
-                    variant="success"
-                  />
+                {/* Notice replacing Make Payment button */}
+                <View style={styles.schemeNoticeBox}>
+                  <Text style={styles.schemeNoticeText}>
+                    📌 Installment collections updated & recorded directly by Admin
+                  </Text>
                 </View>
               </Card>
             );
           })
         )}
 
-        {/* Section 2: Explore & Avail Other Admin Schemes */}
-        {otherAvailableSchemes.length > 0 && (
-          <>
-            <View style={styles.sectionHeaderBox}>
-              <Text style={styles.sectionTitle}>Explore Admin Schemes</Text>
-              <Text style={styles.sectionSubtitle}>Avail additional chit schemes offered by the admin</Text>
-            </View>
+        {/* Section 2: Explore & Avail Admin Schemes */}
+        <View style={styles.sectionHeaderBox}>
+          <Text style={styles.sectionTitle}>Available Admin Schemes</Text>
+          <Text style={styles.sectionSubtitle}>
+            All schemes listed by the admin ({schemes.length} total schemes available)
+          </Text>
+        </View>
 
-            {otherAvailableSchemes.map((s) => {
-              const interest = s.interestAmount || 0;
-              const interestRate = ((interest / s.totalAmount) * 100).toFixed(1);
-              const payout = s.payoutAmount || Math.max(0, s.totalAmount - interest);
+        {otherAvailableSchemes.length === 0 ? (
+          <Card style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>✓ All Schemes Enrolled</Text>
+            <Text style={styles.emptyText}>You have currently availed all available schemes listed by the admin.</Text>
+          </Card>
+        ) : (
+          otherAvailableSchemes.map((s) => {
+            const interest = s.interestAmount || 0;
+            const interestRate = ((interest / s.totalAmount) * 100).toFixed(1);
+            const payout = s.payoutAmount || Math.max(0, s.totalAmount - interest);
 
-              return (
-                <Card key={s.id} style={styles.exploreCard}>
-                  <View style={styles.cardHeaderRow}>
-                    <View style={{ flex: 1, marginRight: SPACING.sm }}>
-                      <Text style={styles.schemeTitle}>{s.name}</Text>
-                      <Text style={styles.schemeTag}>
-                        ₹{s.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(s.frequency)} ({s.durationWeeksOrMonths} collections)
-                      </Text>
-                    </View>
-
-                    <TouchableOpacity
-                      style={styles.availBtn}
-                      onPress={() => handleAvailScheme(s)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.availBtnText}>Avail Scheme →</Text>
-                    </TouchableOpacity>
+            return (
+              <Card key={s.id} style={styles.exploreCard}>
+                <View style={styles.cardHeaderRow}>
+                  <View style={{ flex: 1, marginRight: SPACING.sm }}>
+                    <Text style={styles.schemeTitle}>{s.name}</Text>
+                    <Text style={styles.schemeTag}>
+                      ₹{s.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(s.frequency)} ({s.durationWeeksOrMonths} collections)
+                    </Text>
                   </View>
 
-                  <View style={styles.divider} />
+                  <TouchableOpacity
+                    style={styles.availBtn}
+                    onPress={() => handleAvailScheme(s)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.availBtnText}>Avail Scheme →</Text>
+                  </TouchableOpacity>
+                </View>
 
-                  <View style={styles.financialGrid}>
-                    <View style={styles.finCol}>
-                      <Text style={styles.finLabel}>TOTAL VALUE</Text>
-                      <Text style={styles.finValue}>₹{s.totalAmount.toLocaleString('en-IN')}</Text>
-                    </View>
+                <View style={styles.divider} />
 
-                    <View style={styles.finCol}>
-                      <Text style={styles.finLabel}>INTEREST ({interestRate}%)</Text>
-                      <Text style={styles.finInterest}>- ₹{interest.toLocaleString('en-IN')}</Text>
-                    </View>
-
-                    <View style={styles.finColMain}>
-                      <Text style={styles.finNetLabel}>NET PAYOUT</Text>
-                      <Text style={styles.finNetValue}>₹{payout.toLocaleString('en-IN')}</Text>
-                    </View>
+                <View style={styles.financialGrid}>
+                  <View style={styles.finCol}>
+                    <Text style={styles.finLabel}>TOTAL VALUE</Text>
+                    <Text style={styles.finValue}>₹{s.totalAmount.toLocaleString('en-IN')}</Text>
                   </View>
 
-                  {s.description ? (
-                    <Text style={styles.schemeDesc}>{s.description}</Text>
-                  ) : null}
-                </Card>
-              );
-            })}
-          </>
+                  <View style={styles.finCol}>
+                    <Text style={styles.finLabel}>INTEREST ({interestRate}%)</Text>
+                    <Text style={styles.finInterest}>- ₹{interest.toLocaleString('en-IN')}</Text>
+                  </View>
+
+                  <View style={styles.finColMain}>
+                    <Text style={styles.finNetLabel}>NET PAYOUT</Text>
+                    <Text style={styles.finNetValue}>₹{payout.toLocaleString('en-IN')}</Text>
+                  </View>
+                </View>
+
+                {s.description ? (
+                  <Text style={styles.schemeDesc}>{s.description}</Text>
+                ) : null}
+              </Card>
+            );
+          })
         )}
       </ScrollView>
-
-      {/* Make Payment Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={isPayModalVisible}
-        onRequestClose={() => setIsPayModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                Pay Dues — {selectedSchemeForPay?.name || 'Chit Scheme'}
-              </Text>
-              <TouchableOpacity onPress={() => setIsPayModalVisible(false)} style={styles.closeBtn}>
-                <Text style={styles.closeBtnText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalScroll} keyboardShouldPersistTaps="handled">
-              <Text style={styles.modalCustName}>{customer.name}</Text>
-
-              <View style={styles.modalStatsCard}>
-                <Text style={styles.statsLabel}>REMAINING DUES</Text>
-                <Text style={styles.statsValue}>₹{stats.remainingAmount.toLocaleString('en-IN')}</Text>
-              </View>
-
-              {payError ? <Text style={styles.modalError}>{payError}</Text> : null}
-
-              <FormInput
-                label="Payment Amount (₹)"
-                value={payAmount}
-                onChangeText={(val) => {
-                  setPayAmount(val);
-                  setPayError('');
-                }}
-                keyboardType="numeric"
-              />
-
-              <Text style={styles.modalLabel}>Select Payment Method</Text>
-              <View style={styles.methodGrid}>
-                {(['UPI', 'Cash', 'Card', 'Bank Transfer'] as const).map((method) => {
-                  const isSelected = payMethod === method;
-                  return (
-                    <TouchableOpacity
-                      key={method}
-                      style={[
-                        styles.methodBtn,
-                        isSelected ? styles.methodBtnSelected : null,
-                      ]}
-                      onPress={() => setPayMethod(method)}
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={[
-                          styles.methodBtnText,
-                          isSelected ? styles.methodBtnTextSelected : null,
-                        ]}
-                      >
-                        {method}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <Button
-                title="Confirm & Pay Now"
-                onPress={handleMakePayment}
-                style={styles.modalSubmitBtn}
-                size="large"
-                variant="success"
-              />
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 };
@@ -532,7 +422,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   progressBox: {
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
     backgroundColor: COLORS.white,
     padding: SPACING.sm,
     borderRadius: 8,
@@ -565,11 +455,19 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.success,
     borderRadius: 3,
   },
-  actionRow: {
-    marginTop: SPACING.xs,
+  schemeNoticeBox: {
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 8,
+    padding: SPACING.xs + 2,
+    marginTop: 4,
+    alignItems: 'center',
   },
-  payBtn: {
-    width: '100%',
+  schemeNoticeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#0369A1',
+    fontSize: 10,
   },
   exploreCard: {
     marginBottom: SPACING.md,
@@ -604,112 +502,6 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.bodyLarge,
     color: COLORS.danger,
     marginBottom: SPACING.lg,
-  },
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: COLORS.background,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '85%',
-    paddingBottom: 30,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md + 4,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    backgroundColor: COLORS.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-  },
-  modalTitle: {
-    ...TYPOGRAPHY.h3,
-    color: COLORS.primary,
-  },
-  closeBtn: {
-    padding: SPACING.xs,
-  },
-  closeBtnText: {
-    fontSize: 18,
-    color: COLORS.textMuted,
-    fontWeight: 'bold',
-  },
-  modalScroll: {
-    padding: SPACING.lg,
-  },
-  modalCustName: {
-    ...TYPOGRAPHY.h2,
-    color: COLORS.primary,
-    marginBottom: SPACING.md,
-  },
-  modalStatsCard: {
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    padding: SPACING.md,
-    marginBottom: SPACING.lg,
-  },
-  statsLabel: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.textLight,
-  },
-  statsValue: {
-    ...TYPOGRAPHY.amountMedium,
-    color: COLORS.danger,
-    marginTop: 4,
-  },
-  modalError: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.danger,
-    marginBottom: SPACING.md,
-  },
-  modalLabel: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.primaryLight,
-    marginBottom: SPACING.sm,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  methodGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -SPACING.xs,
-    marginBottom: SPACING.xl,
-  },
-  methodBtn: {
-    backgroundColor: COLORS.white,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    borderRadius: 10,
-    paddingVertical: SPACING.sm + 2,
-    margin: SPACING.xs,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '46%',
-    flexGrow: 1,
-  },
-  methodBtnSelected: {
-    backgroundColor: COLORS.success,
-    borderColor: COLORS.success,
-  },
-  methodBtnText: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.textMuted,
-  },
-  methodBtnTextSelected: {
-    color: COLORS.white,
-  },
-  modalSubmitBtn: {
-    marginBottom: SPACING.md,
   },
 });
 

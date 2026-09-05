@@ -295,9 +295,24 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return s;
     });
 
+    // Sync enrolled customer parameters in real-time
+    const updatedCustomers = customers.map((c) => {
+      if (c.schemeId === schemeId) {
+        return {
+          ...c,
+          amountGiven: updatedScheme.totalAmount !== undefined ? updatedScheme.totalAmount : c.amountGiven,
+          collectionAmount: updatedScheme.collectionAmount !== undefined ? updatedScheme.collectionAmount : c.collectionAmount,
+          frequency: updatedScheme.frequency !== undefined ? updatedScheme.frequency : c.frequency,
+        };
+      }
+      return c;
+    });
+
     setSchemes(updatedSchemes);
+    setCustomers(updatedCustomers);
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.SCHEMES, JSON.stringify(updatedSchemes));
+      await AsyncStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(updatedCustomers));
     } catch (e) {
       console.error('Failed to save updated scheme', e);
     }
