@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, SafeAreaView, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, Text, View, SafeAreaView, ScrollView, TouchableOpacity, Alert, Modal } from 'react-native';
 import { useChitData } from '../../context/ChitDataContext';
-import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
 import FormInput from '../../components/FormInput';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
@@ -21,6 +21,14 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
 
   // Form errors
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Success modal state
+  const [successCustomer, setSuccessCustomer] = useState<{
+    name: string;
+    phone: string;
+    pin: string;
+    schemeName: string;
+  } | null>(null);
 
   const handleSchemeSelect = (schemeId: string) => {
     setSelectedSchemeId(schemeId);
@@ -73,10 +81,15 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
   const handleSubmit = () => {
     if (!validate()) return;
 
+    const registeredName = name.trim();
+    const registeredPhone = phone.trim();
+    const registeredPin = pin.trim();
+    const chosenScheme = schemes.find((s) => s.id === selectedSchemeId);
+
     addCustomer({
-      name: name.trim(),
-      phone: phone.trim(),
-      pin: pin.trim(),
+      name: registeredName,
+      phone: registeredPhone,
+      pin: registeredPin,
       schemeId: selectedSchemeId,
       amountGiven: parseFloat(amountGiven),
       collectionAmount: parseFloat(collectionAmount),
@@ -84,11 +97,12 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
       startDate: new Date().toISOString(),
     });
 
-    Alert.alert(
-      'Success',
-      'Customer registered successfully!',
-      [{ text: 'OK', onPress: () => navigation.goBack() }]
-    );
+    setSuccessCustomer({
+      name: registeredName,
+      phone: registeredPhone,
+      pin: registeredPin,
+      schemeName: chosenScheme ? chosenScheme.name : 'Chit Scheme',
+    });
   };
 
   return (
@@ -209,6 +223,86 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
           size="large"
         />
       </ScrollView>
+
+      {/* Registration Success Modal */}
+      {successCustomer && (
+        <Modal
+          visible={!!successCustomer}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => {
+            setSuccessCustomer(null);
+            navigation.goBack();
+          }}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.successCard}>
+              <View style={styles.successBadgeOuter}>
+                <View style={styles.successBadgeInner}>
+                  <Text style={styles.successBadgeEmoji}>🎉</Text>
+                </View>
+              </View>
+
+              <Text style={styles.successModalTitle}>Customer Registered Successfully! 🎉</Text>
+              <Text style={styles.successModalGreeting}>
+                "{successCustomer.name}" is now enrolled
+              </Text>
+              <Text style={styles.successModalMessage}>
+                Member account has been created and assigned to the selected chit scheme. They can sign in using their phone and PIN.
+              </Text>
+
+              <View style={styles.detailsContainer}>
+                <View style={[styles.detailRow, styles.detailRowBorder]}>
+                  <Text style={styles.detailLabel}>Customer Name</Text>
+                  <Text style={styles.detailValue}>{successCustomer.name}</Text>
+                </View>
+                <View style={[styles.detailRow, styles.detailRowBorder]}>
+                  <Text style={styles.detailLabel}>Phone Number</Text>
+                  <Text style={styles.detailValue}>{successCustomer.phone}</Text>
+                </View>
+                <View style={[styles.detailRow, styles.detailRowBorder]}>
+                  <Text style={styles.detailLabel}>Assigned Scheme</Text>
+                  <Text style={styles.detailValue}>{successCustomer.schemeName}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Login PIN</Text>
+                  <Text style={[styles.detailValue, { color: COLORS.secondary, fontWeight: '700' }]}>
+                    {successCustomer.pin}
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.successPrimaryBtn}
+                onPress={() => {
+                  setSuccessCustomer(null);
+                  navigation.goBack();
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.successPrimaryBtnText}>Done / Back to Customers →</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.successSecondaryBtn}
+                onPress={() => {
+                  setSuccessCustomer(null);
+                  setName('');
+                  setPhone('');
+                  setPin('');
+                  setSelectedSchemeId('');
+                  setAmountGiven('');
+                  setCollectionAmount('');
+                  setErrors({});
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.successSecondaryBtnText}>+ Register Another Member</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 };
@@ -321,6 +415,118 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
     marginBottom: SPACING.sm,
     marginTop: -SPACING.xs,
+  },
+  // Success Modal Styles
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.lg,
+  },
+  successCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    padding: SPACING.xl,
+    width: '100%',
+    maxWidth: 420,
+    alignItems: 'center',
+    ...SHADOWS.lg,
+  },
+  successBadgeOuter: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.md,
+  },
+  successBadgeInner: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#BBF7D0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successBadgeEmoji: {
+    fontSize: 26,
+  },
+  successModalTitle: {
+    ...TYPOGRAPHY.h2,
+    color: '#15803D',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  successModalGreeting: {
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: SPACING.xs,
+  },
+  successModalMessage: {
+    ...TYPOGRAPHY.bodyMedium,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: SPACING.md,
+  },
+  detailsContainer: {
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    marginBottom: SPACING.lg,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm + 1,
+  },
+  detailRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#EDF2F7',
+  },
+  detailLabel: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textLight,
+  },
+  detailValue: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.primary,
+  },
+  successPrimaryBtn: {
+    width: '100%',
+    backgroundColor: COLORS.secondary,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOWS.md,
+  },
+  successPrimaryBtnText: {
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  successSecondaryBtn: {
+    width: '100%',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: SPACING.sm,
+    backgroundColor: '#F1F5F9',
+  },
+  successSecondaryBtnText: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.textMuted,
   },
 });
 

@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Modal,
 } from 'react-native';
 import { useChitData } from '../../context/ChitDataContext';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
@@ -45,6 +46,22 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   // General state handlers
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+
+  // Success Feedback Modal & Persistent Banner states
+  const [successModal, setSuccessModal] = useState<{
+    visible: boolean;
+    role: 'admin' | 'customer';
+    title: string;
+    greeting: string;
+    message: string;
+    details: Array<{ label: string; value: string }>;
+    onContinue: () => void;
+  } | null>(null);
+
+  const [registrationBanner, setRegistrationBanner] = useState<{
+    role: 'admin' | 'customer';
+    text: string;
+  } | null>(null);
 
   const resetForm = () => {
     setAdminPassword('');
@@ -147,21 +164,33 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         const registeredUser = regAdminUser.trim();
         const registeredPass = regAdminPass;
         resetForm();
-        Alert.alert(
-          'Admin Registered! 🎉',
-          `Organizer account "${registeredUser}" was created successfully. You can now sign in with your credentials.`,
-          [
-            {
-              text: 'Sign In Now',
-              onPress: () => {
-                setAuthMode('signin');
-                setLoginTab('admin');
-                setAdminUsername(registeredUser);
-                setAdminPassword(registeredPass);
-              },
-            },
-          ]
-        );
+
+        const proceedToSignIn = () => {
+          setSuccessModal(null);
+          setAuthMode('signin');
+          setLoginTab('admin');
+          setAdminUsername(registeredUser);
+          setAdminPassword(registeredPass);
+          setRegistrationBanner({
+            role: 'admin',
+            text: `Organizer account "${registeredUser}" registered successfully! Please click "Sign In as Organizer" below.`,
+          });
+        };
+
+        setSuccessModal({
+          visible: true,
+          role: 'admin',
+          title: 'Successfully Registered! 🎉',
+          greeting: `Welcome, ${registeredUser}!`,
+          message:
+            'Your Chit Organizer (Admin) account has been created successfully. You can now sign in with your credentials to manage chit schemes, track member payments, and set up your organizer profile.',
+          details: [
+            { label: 'Role', value: 'Chit Organizer (Admin)' },
+            { label: 'Username', value: registeredUser },
+            { label: 'Status', value: 'Active & Ready' },
+          ],
+          onContinue: proceedToSignIn,
+        });
       } else {
         setErrors({ registration: result.error || 'Failed to create admin' });
       }
@@ -204,24 +233,38 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       );
       setLoading(false);
       if (result.success) {
+        const registeredName = regCustName.trim();
         const registeredPhone = regCustPhone.trim();
         const registeredPin = regCustPin;
         resetForm();
-        Alert.alert(
-          'Member Registered! 🎉',
-          `Member account for "${regCustName.trim()}" was created successfully. You can now sign in using your phone and PIN.`,
-          [
-            {
-              text: 'Sign In Now',
-              onPress: () => {
-                setAuthMode('signin');
-                setLoginTab('customer');
-                setCustomerPhone(registeredPhone);
-                setCustomerPin(registeredPin);
-              },
-            },
-          ]
-        );
+
+        const proceedToSignIn = () => {
+          setSuccessModal(null);
+          setAuthMode('signin');
+          setLoginTab('customer');
+          setCustomerPhone(registeredPhone);
+          setCustomerPin(registeredPin);
+          setRegistrationBanner({
+            role: 'customer',
+            text: `Member account for "${registeredName}" registered successfully! Please click "Sign In as Member" below.`,
+          });
+        };
+
+        setSuccessModal({
+          visible: true,
+          role: 'customer',
+          title: 'Successfully Registered! 🎉',
+          greeting: `Welcome, ${registeredName}!`,
+          message:
+            'Your Member account has been registered successfully. You can now sign in using your registered mobile number and 4-digit PIN to track chit schemes and download payment receipts.',
+          details: [
+            { label: 'Role', value: 'Chit Member (Customer)' },
+            { label: 'Member Name', value: registeredName },
+            { label: 'Phone Number', value: registeredPhone },
+            { label: 'Status', value: 'Active & Ready' },
+          ],
+          onContinue: proceedToSignIn,
+        });
       } else {
         setErrors({ registration: result.error || 'Failed to register customer' });
       }
@@ -265,6 +308,7 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               onPress={() => {
                 setAuthMode('signup');
                 resetForm();
+                setRegistrationBanner(null);
               }}
             >
               <Text style={[styles.modeText, authMode === 'signup' ? styles.modeTextActive : null]}>
@@ -302,6 +346,26 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
           {/* Credentials Card Form */}
           <Card style={styles.loginCard} padding={SPACING.lg}>
+            {/* Friendly Registration Success Banner */}
+            {registrationBanner && authMode === 'signin' ? (
+              <View style={styles.successBanner}>
+                <View style={styles.successBannerIconBox}>
+                  <Text style={styles.successBannerEmoji}>🎉</Text>
+                </View>
+                <View style={{ flex: 1, marginHorizontal: SPACING.xs }}>
+                  <Text style={styles.successBannerTitle}>Successfully Registered!</Text>
+                  <Text style={styles.successBannerText}>{registrationBanner.text}</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setRegistrationBanner(null)}
+                  style={styles.bannerDismissBtn}
+                  accessibilityLabel="Dismiss message"
+                >
+                  <Text style={styles.bannerDismissText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
             {errors.login ? <Text style={styles.errorBanner}>{errors.login}</Text> : null}
             {errors.registration ? <Text style={styles.errorBanner}>{errors.registration}</Text> : null}
 
@@ -540,6 +604,61 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Registration Success Celebration Modal */}
+      {successModal && (
+        <Modal
+          visible={successModal.visible}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={successModal.onContinue}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.successCard}>
+              <View style={styles.successBadgeOuter}>
+                <View style={styles.successBadgeInner}>
+                  <Text style={styles.successBadgeEmoji}>🎉</Text>
+                </View>
+              </View>
+
+              <Text style={styles.successModalTitle}>{successModal.title}</Text>
+              <Text style={styles.successModalGreeting}>{successModal.greeting}</Text>
+              <Text style={styles.successModalMessage}>{successModal.message}</Text>
+
+              <View style={styles.detailsContainer}>
+                {successModal.details.map((item, idx) => (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.detailRow,
+                      idx < successModal.details.length - 1 ? styles.detailRowBorder : null,
+                    ]}
+                  >
+                    <Text style={styles.detailLabel}>{item.label}</Text>
+                    <Text style={styles.detailValue}>{item.value}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={styles.successActionButton}
+                onPress={successModal.onContinue}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.successActionButtonText}>
+                  {successModal.role === 'admin'
+                    ? 'Sign In as Organizer →'
+                    : 'Sign In as Member →'}
+                </Text>
+              </TouchableOpacity>
+
+              <Text style={styles.successFooterNote}>
+                💡 Your credentials have been pre-filled for easy sign in.
+              </Text>
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 };
@@ -737,6 +856,155 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
     lineHeight: 15,
+  },
+  // Success Banner
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#A7F3D0',
+    borderRadius: 12,
+    padding: SPACING.sm + 2,
+    marginBottom: SPACING.md,
+  },
+  successBannerIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#D1FAE5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.xs,
+  },
+  successBannerEmoji: {
+    fontSize: 16,
+  },
+  successBannerTitle: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#065F46',
+    fontSize: 13,
+  },
+  successBannerText: {
+    ...TYPOGRAPHY.caption,
+    color: '#047857',
+    marginTop: 1,
+    lineHeight: 16,
+    fontSize: 12,
+  },
+  bannerDismissBtn: {
+    padding: 6,
+    marginLeft: 4,
+  },
+  bannerDismissText: {
+    color: '#059669',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  // Success Modal Styles
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.lg,
+  },
+  successCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    padding: SPACING.xl,
+    width: '100%',
+    maxWidth: 420,
+    alignItems: 'center',
+    ...SHADOWS.lg,
+  },
+  successBadgeOuter: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.md,
+  },
+  successBadgeInner: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#BBF7D0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successBadgeEmoji: {
+    fontSize: 26,
+  },
+  successModalTitle: {
+    ...TYPOGRAPHY.h2,
+    color: '#15803D',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  successModalGreeting: {
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: SPACING.xs,
+  },
+  successModalMessage: {
+    ...TYPOGRAPHY.bodyMedium,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: SPACING.md,
+  },
+  detailsContainer: {
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    marginBottom: SPACING.lg,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm + 1,
+  },
+  detailRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#EDF2F7',
+  },
+  detailLabel: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textLight,
+  },
+  detailValue: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.primary,
+  },
+  successActionButton: {
+    width: '100%',
+    backgroundColor: COLORS.secondary,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOWS.md,
+  },
+  successActionButtonText: {
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  successFooterNote: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginTop: SPACING.sm + 2,
+    textAlign: 'center',
   },
 });
 
