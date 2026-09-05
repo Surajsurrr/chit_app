@@ -158,8 +158,9 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
 
         if (savedCustomers && savedPayments && savedSchemes && savedReceipts) {
-          setCustomers(JSON.parse(savedCustomers));
-          setPayments(JSON.parse(savedPayments));
+          const parsedCustomers: Customer[] = JSON.parse(savedCustomers);
+          const parsedPayments: Payment[] = JSON.parse(savedPayments);
+          const parsedReceipts: Receipt[] = JSON.parse(savedReceipts);
           const parsedSchemes: Scheme[] = JSON.parse(savedSchemes).map((s: Scheme) => {
             const initialMatch = INITIAL_SCHEMES.find((init) => init.id === s.id);
             const interest = (s.interestAmount !== undefined && s.interestAmount > 0)
@@ -174,8 +175,54 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               payoutAmount: payout,
             };
           });
+
+          // Reconcile: Ensure every payment in parsedPayments has a receipt
+          const receiptMap = new Map<string, Receipt>();
+          parsedReceipts.forEach((r) => {
+            receiptMap.set(r.id, r);
+            if (r.paymentId) receiptMap.set(r.paymentId, r);
+          });
+
+          const reconciledReceipts = [...parsedReceipts];
+          parsedPayments.forEach((p) => {
+            if (!receiptMap.has(p.receiptId) && !receiptMap.has(p.id)) {
+              const cust = parsedCustomers.find((c) => c.id === p.customerId);
+              const sch = parsedSchemes.find((s) => s.id === cust?.schemeId);
+              const pDate = new Date(p.date);
+              const year = isNaN(pDate.getFullYear()) ? '2026' : pDate.getFullYear().toString();
+              const month = isNaN(pDate.getMonth()) ? '08' : (pDate.getMonth() + 1).toString().padStart(2, '0');
+              const suffix = p.id.replace(/[^0-9]/g, '').slice(-4).padStart(4, '0') || '1001';
+
+              const newRec: Receipt = {
+                id: p.receiptId || `rec-${p.id}`,
+                paymentId: p.id,
+                receiptNumber: `REC-${year}${month}-${suffix}`,
+                customerId: p.customerId,
+                customerName: p.customerName || cust?.name || 'Customer',
+                date: p.date,
+                amount: p.amount,
+                method: `${p.method} payment`,
+                schemeName: p.schemeName || sch?.name || 'Chit Scheme',
+                remainingBalance: Math.max(0, (cust?.amountGiven || 50000) - p.amount),
+                referenceId: `REF${p.id.replace(/[^0-9]/g, '').slice(-9).padStart(9, '9')}`,
+              };
+
+              reconciledReceipts.push(newRec);
+              receiptMap.set(newRec.id, newRec);
+              receiptMap.set(p.id, newRec);
+            }
+          });
+
+          reconciledReceipts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+          setCustomers(parsedCustomers);
+          setPayments(parsedPayments);
           setSchemes(parsedSchemes);
-          setReceipts(JSON.parse(savedReceipts));
+          setReceipts(reconciledReceipts);
+
+          if (reconciledReceipts.length !== parsedReceipts.length) {
+            AsyncStorage.setItem(STORAGE_KEYS.RECEIPTS, JSON.stringify(reconciledReceipts)).catch(console.error);
+          }
         } else {
           // No saved data, load initial mocks and save them
           await initializeData();

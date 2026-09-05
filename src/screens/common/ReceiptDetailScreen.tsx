@@ -1,16 +1,30 @@
-import React from 'react';
-import { StyleSheet, Text, View, SafeAreaView, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  SafeAreaView,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
 import { useChitData } from '../../context/ChitDataContext';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
 import { formatDateLong } from '../../utils/dateHelpers';
+import { downloadReceiptPdf } from '../../utils/receiptGenerator';
 import { StatusBar } from 'expo-status-bar';
 
-export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({ route, navigation }) => {
+export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
+  route,
+  navigation,
+}) => {
   const { receiptId } = route.params;
-  const { receipts } = useChitData();
-  
+  const { receipts, customers, schemes } = useChitData();
+  const [isDownloading, setIsDownloading] = useState(false);
+
   const receipt = receipts.find((r) => r.id === receiptId);
 
   if (!receipt) {
@@ -22,30 +36,52 @@ export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
     );
   }
 
+  const customer = customers.find((c) => c.id === receipt.customerId);
+  const scheme = schemes.find(
+    (s) => s.id === customer?.schemeId || s.name === receipt.schemeName
+  );
+
+  const handleDownload = async () => {
+    setIsDownloading(true);
+    try {
+      const res = await downloadReceiptPdf(receipt, customer, scheme);
+      if (res.success) {
+        // Success feedback handled in downloadReceiptPdf
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not download receipt');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Card style={styles.receiptCard}>
           {/* Ticket Header cut-out indicator */}
           <View style={styles.successBanner}>
             <View style={styles.successIconOuter}>
               <View style={styles.successIconInner} />
             </View>
-            <Text style={styles.successTitle}>Payment Successful</Text>
+            <Text style={styles.successTitle}>Payment Verified</Text>
             <Text style={styles.heroAmount}>₹{receipt.amount.toLocaleString('en-IN')}</Text>
+            <View style={styles.badgeRow}>
+              <Text style={styles.receiptNumBadge}>{receipt.receiptNumber}</Text>
+            </View>
           </View>
 
           {/* Receipt details */}
           <View style={styles.detailsContainer}>
             <View style={styles.row}>
               <Text style={styles.label}>Receipt Number</Text>
-              <Text style={styles.value}>{receipt.receiptNumber}</Text>
+              <Text style={[styles.value, styles.monoValue]}>{receipt.receiptNumber}</Text>
             </View>
-            
+
             <View style={styles.row}>
               <Text style={styles.label}>Reference ID</Text>
-              <Text style={[styles.value, styles.refId]}>{receipt.referenceId}</Text>
+              <Text style={[styles.value, styles.monoValue]}>{receipt.referenceId}</Text>
             </View>
 
             <View style={styles.divider} />
@@ -74,7 +110,9 @@ export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
 
             <View style={styles.row}>
               <Text style={styles.balanceLabel}>Remaining Balance</Text>
-              <Text style={styles.balanceValue}>₹{receipt.remainingBalance.toLocaleString('en-IN')}</Text>
+              <Text style={styles.balanceValue}>
+                ₹{receipt.remainingBalance.toLocaleString('en-IN')}
+              </Text>
             </View>
           </View>
 
@@ -86,13 +124,33 @@ export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
           </View>
         </Card>
 
-        <Button
-          title="Done"
-          onPress={() => navigation.goBack()}
-          style={styles.doneBtn}
-        />
-        
-        <Text style={styles.shareText}>Receipt sharing and PDF export can be integrated here</Text>
+        {/* Action Buttons */}
+        <View style={styles.actionsBox}>
+          <TouchableOpacity
+            style={[styles.downloadBtn, isDownloading && styles.downloadBtnDisabled]}
+            onPress={handleDownload}
+            disabled={isDownloading}
+            activeOpacity={0.8}
+          >
+            {isDownloading ? (
+              <ActivityIndicator color={COLORS.white} size="small" />
+            ) : (
+              <Text style={styles.downloadBtnText}>📥 Download PDF Receipt</Text>
+            )}
+          </TouchableOpacity>
+
+          <Button
+            title="Done / Close"
+            onPress={() => navigation.goBack()}
+            style={styles.doneBtn}
+            variant="outline"
+          />
+        </View>
+
+        <Text style={styles.shareText}>
+          Official digital receipt issued by ChitFlow Enterprises.
+          {'\n'}PDF download is compatible with mobile, tablet & desktop.
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -115,6 +173,10 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 0,
     elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
   },
   successBanner: {
     backgroundColor: COLORS.successLight,
@@ -132,7 +194,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(16, 185, 129, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
   },
   successIconInner: {
     width: 24,
@@ -149,7 +211,21 @@ const styles = StyleSheet.create({
   heroAmount: {
     ...TYPOGRAPHY.amountLarge,
     color: COLORS.primary,
-    marginTop: SPACING.sm,
+    marginTop: SPACING.xs,
+  },
+  badgeRow: {
+    marginTop: SPACING.xs,
+  },
+  receiptNumBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    color: '#065F46',
+    paddingHorizontal: SPACING.sm + 4,
+    paddingVertical: 3,
+    borderRadius: 12,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    overflow: 'hidden',
   },
   detailsContainer: {
     padding: SPACING.lg,
@@ -168,8 +244,9 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.bodyMediumBold,
     color: COLORS.text,
   },
-  refId: {
-    fontFamily: 'System', // use monospace-ish default
+  monoValue: {
+    fontFamily: 'monospace',
+    color: COLORS.secondary,
   },
   balanceLabel: {
     ...TYPOGRAPHY.bodyMediumBold,
@@ -201,15 +278,40 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '45deg' }],
     marginTop: 4,
   },
-  doneBtn: {
+  actionsBox: {
     width: '100%',
     marginTop: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  downloadBtn: {
+    backgroundColor: COLORS.success,
+    borderRadius: 12,
+    paddingVertical: SPACING.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+  },
+  downloadBtnDisabled: {
+    opacity: 0.7,
+  },
+  downloadBtnText: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.white,
+    fontSize: 15,
+  },
+  doneBtn: {
+    width: '100%',
   },
   shareText: {
     ...TYPOGRAPHY.caption,
     textAlign: 'center',
     marginTop: SPACING.md,
     color: COLORS.textLight,
+    lineHeight: 16,
   },
   errorContainer: {
     flex: 1,

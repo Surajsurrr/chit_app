@@ -61,6 +61,8 @@ function AdminTabNavigator() {
             iconName = 'people';
           } else if (route.name === 'Collections') {
             iconName = 'cash';
+          } else if (route.name === 'Receipts') {
+            iconName = 'receipt';
           } else if (route.name === 'Schemes') {
             iconName = 'list';
           }
@@ -96,6 +98,7 @@ function AdminTabNavigator() {
       <Tab.Screen name="Dashboard" component={DashboardScreen} />
       <Tab.Screen name="Customers" component={CustomersScreen} />
       <Tab.Screen name="Collections" component={CollectionsScreen} />
+      <Tab.Screen name="Receipts" component={ReceiptsScreen} />
       <Tab.Screen name="Schemes" component={SchemesScreen} />
     </Tab.Navigator>
   );
