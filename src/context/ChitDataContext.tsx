@@ -761,11 +761,13 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setCurrentUserRole(null);
     setCurrentUserId(null);
     setCurrentAdminUser(null);
+    setSelectedCustomerIdState('');
 
     AsyncStorage.setItem(STORAGE_KEYS.IS_LOGGED_IN, 'false').catch(console.error);
     AsyncStorage.removeItem(STORAGE_KEYS.ROLE).catch(console.error);
     AsyncStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID).catch(console.error);
     AsyncStorage.removeItem(STORAGE_KEYS.CURRENT_ADMIN_USER).catch(console.error);
+    AsyncStorage.removeItem(STORAGE_KEYS.SELECTED_CUST).catch(console.error);
   };
 
   // Helper selectors

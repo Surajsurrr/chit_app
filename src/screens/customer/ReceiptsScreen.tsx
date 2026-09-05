@@ -169,18 +169,7 @@ export const ReceiptsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Log Out',
-      `Are you sure you want to log out of your ${isAdmin ? 'organizer' : 'member'} account?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Log Out',
-          style: 'destructive',
-          onPress: () => logout(),
-        },
-      ]
-    );
+    logout();
   };
 
   const renderReceiptItem = ({ item }: { item: Receipt }) => {

@@ -105,18 +105,7 @@ export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Log Out',
-      'Are you sure you want to log out of your member account?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Log Out',
-          style: 'destructive',
-          onPress: () => logout(),
-        },
-      ]
-    );
+    logout();
   };
 
   return (
