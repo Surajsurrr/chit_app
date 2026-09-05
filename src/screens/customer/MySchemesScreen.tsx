@@ -109,18 +109,24 @@ export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
         ) : (
           availedSchemes.map((s) => {
             const isPrimary = s.id === customer.schemeId;
-            const interest = s.interestAmount || 0;
-            const interestRate = ((interest / s.totalAmount) * 100).toFixed(1);
-            const payout = s.payoutAmount || Math.max(0, s.totalAmount - interest);
+            const snapshot = customer.enrolledSchemes?.find((es) => es.schemeId === s.id);
+
+            // Customer's locked-in terms when enrolled (lasts forever)
+            const totalVal = snapshot?.totalAmount ?? (isPrimary ? customer.amountGiven : s.totalAmount);
+            const colVal = snapshot?.collectionAmount ?? (isPrimary ? customer.collectionAmount : s.collectionAmount);
+            const freqVal = snapshot?.frequency ?? (isPrimary ? customer.frequency : s.frequency);
+            const interest = snapshot?.interestAmount ?? s.interestAmount ?? 0;
+            const interestRate = totalVal > 0 ? ((interest / totalVal) * 100).toFixed(1) : '0';
+            const payout = snapshot?.payoutAmount ?? s.payoutAmount ?? Math.max(0, totalVal - interest);
 
             return (
               <Card key={s.id} style={[styles.availedCard, isPrimary && styles.primaryAvailedCard]}>
                 {/* Header row */}
                 <View style={styles.cardHeaderRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.schemeTitle}>{s.name}</Text>
+                    <Text style={styles.schemeTitle}>{snapshot?.schemeName || s.name}</Text>
                     <Text style={styles.schemeTag}>
-                      ₹{s.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(s.frequency)}
+                      ₹{colVal.toLocaleString('en-IN')} · {formatFrequency(freqVal)}
                     </Text>
                   </View>
 
@@ -146,7 +152,7 @@ export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                 <View style={styles.financialGrid}>
                   <View style={styles.finCol}>
                     <Text style={styles.finLabel}>TOTAL VALUE</Text>
-                    <Text style={styles.finValue}>₹{s.totalAmount.toLocaleString('en-IN')}</Text>
+                    <Text style={styles.finValue}>₹{totalVal.toLocaleString('en-IN')}</Text>
                   </View>
 
                   <View style={styles.finCol}>

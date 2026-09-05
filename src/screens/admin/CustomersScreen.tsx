@@ -35,12 +35,16 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   const customerData = customers.map((c) => {
     const stats = getCustomerStats(c.id);
     const scheme = schemes.find((s) => s.id === c.schemeId);
+    const enrolledSnapshot = c.enrolledSchemes?.find((es) => es.schemeId === c.schemeId)
+      || c.enrolledSchemes?.[c.enrolledSchemes.length - 1];
+    const schemeName = enrolledSnapshot?.schemeName || scheme?.name || 'Chit Scheme';
     const isSettled = stats.remainingAmount === 0;
     const statusInfo = getPaymentStatusInfo(c.nextPaymentDate, stats.remainingAmount, c.frequency);
     return {
       customer: c,
       stats,
       scheme,
+      schemeName,
       isSettled,
       statusInfo,
     };
@@ -107,7 +111,7 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   };
 
   const renderCustomerItem = ({ item }: { item: typeof customerData[0] }) => {
-    const { customer, stats, scheme, isSettled, statusInfo } = item;
+    const { customer, stats, scheme, schemeName, isSettled, statusInfo } = item;
 
     return (
       <View style={styles.cardWrapper}>
@@ -157,7 +161,7 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
               </View>
               <Text style={styles.phoneText}>+91 {customer.phone}</Text>
               <Text style={styles.schemeTagText}>
-                {scheme ? scheme.name : 'Chit Scheme'} · {formatFrequency(customer.frequency)}
+                {schemeName} · {formatFrequency(customer.frequency)}
               </Text>
             </TouchableOpacity>
 
@@ -348,6 +352,9 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
             {selectedCust && (() => {
               const custStats = getCustomerStats(selectedCust.id);
               const custScheme = schemes.find((s) => s.id === selectedCust.schemeId);
+              const custSnapshot = selectedCust.enrolledSchemes?.find((es) => es.schemeId === selectedCust.schemeId)
+                || selectedCust.enrolledSchemes?.[selectedCust.enrolledSchemes.length - 1];
+              const custSchemeName = custSnapshot?.schemeName || custScheme?.name || 'Chit Scheme';
               const statusInfo = getPaymentStatusInfo(
                 selectedCust.nextPaymentDate,
                 custStats.remainingAmount,
@@ -362,7 +369,7 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                       <Text style={styles.modalCustName}>{selectedCust.name}</Text>
                       <Text style={styles.modalCustPhone}>+91 {selectedCust.phone}</Text>
                       <Text style={styles.modalCustScheme}>
-                        {custScheme ? custScheme.name : 'Chit Scheme'} · {formatFrequency(selectedCust.frequency)}
+                        {custSchemeName} · {formatFrequency(selectedCust.frequency)}
                       </Text>
                     </View>
                     <View style={styles.modalBalanceBox}>

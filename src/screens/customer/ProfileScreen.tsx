@@ -64,6 +64,10 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   }
 
   const scheme = schemes.find((s) => s.id === customer.schemeId);
+  const enrolledSnapshot = customer.enrolledSchemes?.find((es) => es.schemeId === customer.schemeId)
+    || customer.enrolledSchemes?.[customer.enrolledSchemes.length - 1];
+  const activeSchemeName = enrolledSnapshot?.schemeName || scheme?.name || 'Active Scheme';
+  const activeSchemeValue = enrolledSnapshot?.totalAmount || customer.amountGiven;
   const stats = getCustomerStats(customer.id);
 
   const nameInitials = customer.name
@@ -275,11 +279,11 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         <Card style={styles.detailsCard}>
           <View style={styles.row}>
             <Text style={styles.label}>Associated Scheme</Text>
-            <Text style={styles.value}>{scheme ? scheme.name : 'Active Scheme'}</Text>
+            <Text style={styles.value}>{activeSchemeName}</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>Total Scheme Value</Text>
-            <Text style={styles.value}>₹{customer.amountGiven.toLocaleString('en-IN')}</Text>
+            <Text style={styles.value}>₹{activeSchemeValue.toLocaleString('en-IN')}</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>Installment Amount</Text>
@@ -290,6 +294,12 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           <View style={styles.row}>
             <Text style={styles.label}>Registration Date</Text>
             <Text style={styles.value}>{formatDateLong(customer.startDate)}</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.label}>Contract Guarantee</Text>
+            <Text style={[styles.value, { color: '#059669', fontWeight: '700' }]}>
+              🔒 Agreed Terms Locked Forever
+            </Text>
           </View>
         </Card>
 

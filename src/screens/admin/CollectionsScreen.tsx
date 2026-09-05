@@ -120,7 +120,9 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
   // Automated Reminder Message Generator & Handlers
   const handleOpenMessage = (cust: Customer, info: PaymentStatusInfo) => {
     const scheme = schemes.find((s) => s.id === cust.schemeId);
-    const schemeName = scheme ? scheme.name : 'Chit Scheme';
+    const enrolledSnapshot = cust.enrolledSchemes?.find((es) => es.schemeId === cust.schemeId)
+      || cust.enrolledSchemes?.[cust.enrolledSchemes.length - 1];
+    const schemeName = enrolledSnapshot?.schemeName || scheme?.name || 'Chit Scheme';
     
     let defaultMsg = '';
     if (info.isOverdue) {

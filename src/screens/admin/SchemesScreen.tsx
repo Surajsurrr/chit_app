@@ -274,6 +274,14 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
       </View>
 
       <View style={styles.content}>
+        {/* Scheme Policy Notice Banner */}
+        <View style={styles.policyNoticeBanner}>
+          <Text style={styles.policyNoticeIcon}>ℹ️</Text>
+          <Text style={styles.policyNoticeText}>
+            Scheme terms agreed upon by enrolled members last permanently. Changes made here apply to all future member enrollments.
+          </Text>
+        </View>
+
         {schemes.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No schemes available.</Text>
@@ -317,6 +325,14 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
             </View>
 
             <ScrollView style={styles.modalScroll} keyboardShouldPersistTaps="handled">
+              {editingSchemeId && (
+                <View style={styles.modalEditNoticeBox}>
+                  <Text style={styles.modalEditNoticeText}>
+                    📌 Edits apply to future member enrollments. Existing enrolled customers will permanently keep their agreed contract terms.
+                  </Text>
+                </View>
+              )}
+
               {formError ? <Text style={styles.modalError}>{formError}</Text> : null}
 
               {/* Dynamic Live Calculation Card */}
@@ -910,6 +926,40 @@ const styles = StyleSheet.create({
   },
   modalSubmitBtn: {
     marginBottom: SPACING.xl,
+  },
+  policyNoticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#BAE6FD',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+  },
+  policyNoticeIcon: {
+    fontSize: 15,
+    marginRight: SPACING.xs + 2,
+  },
+  policyNoticeText: {
+    ...TYPOGRAPHY.caption,
+    color: '#0369A1',
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  modalEditNoticeBox: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 10,
+    padding: SPACING.sm + 2,
+    marginBottom: SPACING.md,
+  },
+  modalEditNoticeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#15803D',
+    fontSize: 11,
+    lineHeight: 16,
   },
 });
 

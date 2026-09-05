@@ -5,6 +5,7 @@ import {
   Payment,
   Scheme,
   Receipt,
+  EnrolledScheme,
   INITIAL_CUSTOMERS,
   INITIAL_PAYMENTS,
   INITIAL_RECEIPTS,
@@ -166,6 +167,8 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             const initial = INITIAL_CUSTOMERS.find((init) => init.id === c.id);
             return {
               ...c,
+              enrolledSchemeIds: c.enrolledSchemeIds || initial?.enrolledSchemeIds || (c.schemeId ? [c.schemeId] : []),
+              enrolledSchemes: c.enrolledSchemes || initial?.enrolledSchemes,
               email: c.email || initial?.email,
               address: c.address || initial?.address,
               city: c.city || initial?.city,
@@ -315,11 +318,29 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const addCustomer = async (newCustomerData: Omit<Customer, 'id' | 'nextPaymentDate'>) => {
     const newId = `cust-${Date.now()}`;
+    const scheme = schemes.find((s) => s.id === newCustomerData.schemeId);
+    const interest = scheme?.interestAmount ?? 0;
+    const payout = scheme?.payoutAmount ?? Math.max(0, newCustomerData.amountGiven - interest);
+
+    const enrolledSnapshot: EnrolledScheme = {
+      schemeId: newCustomerData.schemeId,
+      schemeName: scheme?.name || 'Chit Scheme',
+      totalAmount: newCustomerData.amountGiven,
+      interestAmount: interest,
+      payoutAmount: payout,
+      collectionAmount: newCustomerData.collectionAmount,
+      frequency: newCustomerData.frequency,
+      durationWeeksOrMonths: scheme?.durationWeeksOrMonths || 10,
+      enrolledAt: new Date().toISOString(),
+    };
+
     const newCustomer: Customer = {
       ...newCustomerData,
       id: newId,
       // For a new customer, next payment date is initial startDate
       nextPaymentDate: newCustomerData.startDate,
+      enrolledSchemeIds: [newCustomerData.schemeId],
+      enrolledSchemes: [enrolledSnapshot],
     };
 
     const updated = [newCustomer, ...customers];
@@ -360,24 +381,11 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return s;
     });
 
-    // Sync enrolled customer parameters in real-time
-    const updatedCustomers = customers.map((c) => {
-      if (c.schemeId === schemeId) {
-        return {
-          ...c,
-          amountGiven: updatedScheme.totalAmount !== undefined ? updatedScheme.totalAmount : c.amountGiven,
-          collectionAmount: updatedScheme.collectionAmount !== undefined ? updatedScheme.collectionAmount : c.collectionAmount,
-          frequency: updatedScheme.frequency !== undefined ? updatedScheme.frequency : c.frequency,
-        };
-      }
-      return c;
-    });
-
+    // BUSINESS RULE: Scheme edits ONLY affect future enrollments/availments.
+    // Existing enrolled customers retain their locked-in contract terms permanently.
     setSchemes(updatedSchemes);
-    setCustomers(updatedCustomers);
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.SCHEMES, JSON.stringify(updatedSchemes));
-      await AsyncStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(updatedCustomers));
     } catch (e) {
       console.error('Failed to save updated scheme', e);
     }
@@ -432,10 +440,30 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const updatedCustomers = customers.map((c) => {
       if (c.id === customerId) {
-        const currentEnrolled = c.enrolledSchemeIds || [c.schemeId];
+        const currentEnrolled = c.enrolledSchemeIds || (c.schemeId ? [c.schemeId] : []);
         const newEnrolled = currentEnrolled.includes(schemeId)
           ? currentEnrolled
           : [...currentEnrolled, schemeId];
+
+        // Create an immutable snapshot of the scheme terms at the time of enrollment
+        const interest = selectedScheme.interestAmount || 0;
+        const payout = selectedScheme.payoutAmount || (selectedScheme.totalAmount - interest);
+
+        const newSnapshot: EnrolledScheme = {
+          schemeId: selectedScheme.id,
+          schemeName: selectedScheme.name,
+          totalAmount: selectedScheme.totalAmount,
+          interestAmount: interest,
+          payoutAmount: payout,
+          collectionAmount: selectedScheme.collectionAmount,
+          frequency: selectedScheme.frequency,
+          durationWeeksOrMonths: selectedScheme.durationWeeksOrMonths,
+          enrolledAt: new Date().toISOString(),
+        };
+
+        const existingSnapshots = c.enrolledSchemes || [];
+        const filteredSnapshots = existingSnapshots.filter((s) => s.schemeId !== schemeId);
+        const newSnapshots = [...filteredSnapshots, newSnapshot];
 
         return {
           ...c,
@@ -444,6 +472,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           collectionAmount: selectedScheme.collectionAmount,
           frequency: selectedScheme.frequency,
           enrolledSchemeIds: newEnrolled,
+          enrolledSchemes: newSnapshots,
         };
       }
       return c;

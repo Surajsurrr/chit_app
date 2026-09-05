@@ -13,7 +13,7 @@ import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
 import TransactionRow from '../../components/TransactionRow';
-import { formatDateLong, getPaymentStatusInfo, formatFrequency } from '../../utils/dateHelpers';
+import { formatDateLong, formatDateShort, getPaymentStatusInfo, formatFrequency } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
 import { Scheme } from '../../data/mockData';
 
@@ -41,6 +41,13 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   }
 
   const scheme = schemes.find((s) => s.id === customer.schemeId);
+  const enrolledSnapshot = customer.enrolledSchemes?.find((es) => es.schemeId === customer.schemeId)
+    || customer.enrolledSchemes?.[customer.enrolledSchemes.length - 1];
+  const activeSchemeName = enrolledSnapshot?.schemeName || scheme?.name || 'Active Scheme';
+  const activeSchemeValue = enrolledSnapshot?.totalAmount || customer.amountGiven;
+  const activeInterest = enrolledSnapshot?.interestAmount ?? scheme?.interestAmount ?? 0;
+  const activePayout = enrolledSnapshot?.payoutAmount ?? (scheme?.payoutAmount ?? Math.max(0, activeSchemeValue - activeInterest));
+
   const stats = getCustomerStats(customer.id);
   const customerPayments = payments.filter((p) => p.customerId === customer.id);
   const recentPayments = customerPayments.slice(0, 3); // top 3
@@ -204,26 +211,36 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         {/* My Active Chit Scheme Section */}
         <Text style={styles.sectionTitle}>My Chit Scheme & Payout Details</Text>
         <Card style={styles.schemeCard}>
+          <View style={styles.lockedTermsHeader}>
+            <Text style={styles.lockedTermsIcon}>🔒</Text>
+            <View style={{ flex: 1, marginLeft: SPACING.xs }}>
+              <Text style={styles.lockedTermsTitle}>PERMANENT CONTRACT TERMS</Text>
+              <Text style={styles.lockedTermsSub}>
+                Agreed at enrollment ({formatDateShort(enrolledSnapshot?.enrolledAt || customer.startDate)}) · Protected forever
+              </Text>
+            </View>
+          </View>
+
           <View style={styles.schemeRow}>
             <Text style={styles.schemeLabel}>Scheme Name</Text>
-            <Text style={styles.schemeVal}>{scheme ? scheme.name : 'Active Scheme'}</Text>
+            <Text style={styles.schemeVal}>{activeSchemeName}</Text>
           </View>
           <View style={styles.schemeRow}>
             <Text style={styles.schemeLabel}>Total Scheme Value</Text>
-            <Text style={styles.schemeVal}>₹{customer.amountGiven.toLocaleString('en-IN')}</Text>
+            <Text style={styles.schemeVal}>₹{activeSchemeValue.toLocaleString('en-IN')}</Text>
           </View>
-          {scheme && (scheme.interestAmount !== undefined) ? (
+          {activeInterest > 0 ? (
             <View style={styles.schemeRow}>
               <Text style={styles.schemeLabel}>Upfront Interest Deduction</Text>
               <Text style={styles.schemeInterestVal}>
-                - ₹{scheme.interestAmount.toLocaleString('en-IN')} ({((scheme.interestAmount / customer.amountGiven) * 100).toFixed(1)}% rate)
+                - ₹{activeInterest.toLocaleString('en-IN')} ({((activeInterest / activeSchemeValue) * 100).toFixed(1)}% rate)
               </Text>
             </View>
           ) : null}
           <View style={[styles.schemeRow, styles.schemeHighlightRow]}>
             <Text style={styles.schemeHighlightLabel}>Net Amount Received (Payout)</Text>
             <Text style={styles.schemeHighlightVal}>
-              ₹{(scheme?.payoutAmount ?? (customer.amountGiven - (scheme?.interestAmount ?? 0))).toLocaleString('en-IN')}
+              ₹{activePayout.toLocaleString('en-IN')}
             </Text>
           </View>
           <View style={styles.schemeRow}>
@@ -238,7 +255,8 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             <Text style={styles.noticeIcon}>ℹ️</Text>
             <Text style={styles.noticeText}>
               {scheme?.description ||
-                `You receive a net payout of ₹${(scheme?.payoutAmount ?? (customer.amountGiven - (scheme?.interestAmount ?? 0))).toLocaleString('en-IN')} upfront (after ₹${(scheme?.interestAmount ?? 0).toLocaleString('en-IN')} interest deduction), and repay ₹${customer.amountGiven.toLocaleString('en-IN')} across scheduled installments.`}
+                `You receive a net payout of ₹${activePayout.toLocaleString('en-IN')} upfront (after ₹${activeInterest.toLocaleString('en-IN')} interest deduction), and repay ₹${activeSchemeValue.toLocaleString('en-IN')} across scheduled installments.`}
+              {'\n'}• Your enrolled terms are locked forever. Future modifications by admin to general scheme templates will never affect your agreement.
             </Text>
           </View>
         </Card>
@@ -606,6 +624,32 @@ const styles = StyleSheet.create({
   sectionLink: {
     ...TYPOGRAPHY.bodyMediumBold,
     color: COLORS.secondary,
+  },
+  lockedTermsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: SPACING.sm,
+    borderRadius: 8,
+    marginBottom: SPACING.sm + 2,
+  },
+  lockedTermsIcon: {
+    fontSize: 16,
+    marginRight: SPACING.xs,
+  },
+  lockedTermsTitle: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#0F172A',
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
+  lockedTermsSub: {
+    ...TYPOGRAPHY.caption,
+    color: '#64748B',
+    fontSize: 10,
+    marginTop: 1,
   },
   schemeCard: {
     marginBottom: SPACING.lg,

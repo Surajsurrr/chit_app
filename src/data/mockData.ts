@@ -1,5 +1,17 @@
 import { calculateNextPaymentDate } from '../utils/dateHelpers';
 
+export interface EnrolledScheme {
+  schemeId: string;
+  schemeName: string;
+  totalAmount: number;
+  interestAmount: number;
+  payoutAmount: number;
+  collectionAmount: number;
+  frequency: 'daily' | 'every_3_days' | 'weekly' | 'monthly';
+  durationWeeksOrMonths: number;
+  enrolledAt: string;
+}
+
 export interface Customer {
   id: string;
   name: string;
@@ -12,6 +24,7 @@ export interface Customer {
   startDate: string;
   nextPaymentDate: string;
   enrolledSchemeIds?: string[];
+  enrolledSchemes?: EnrolledScheme[];
   // Extended Profile & KYC Details
   email?: string;
   address?: string;
@@ -264,6 +277,20 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     startDate: '2026-05-15T00:00:00.000Z',
     // Last payment was Aug 25, 2026. Next would be Aug 28, 2026.
     nextPaymentDate: '2026-08-28T10:00:00.000Z',
+    enrolledSchemeIds: ['scheme-1'],
+    enrolledSchemes: [
+      {
+        schemeId: 'scheme-1',
+        schemeName: 'Bronze 3-Day 50K',
+        totalAmount: 50000,
+        interestAmount: 4000,
+        payoutAmount: 46000,
+        collectionAmount: 1000,
+        frequency: 'every_3_days',
+        durationWeeksOrMonths: 50,
+        enrolledAt: '2026-05-15T00:00:00.000Z',
+      },
+    ],
     email: 'ravi.kumar@gmail.com',
     address: '42, North Mada Street, Mylapore',
     city: 'Chennai',
@@ -286,6 +313,20 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     startDate: '2026-08-05T00:00:00.000Z',
     // Last payment was Aug 30, 2026. Next is Aug 31, 2026.
     nextPaymentDate: '2026-08-31T11:30:00.000Z',
+    enrolledSchemeIds: ['scheme-2'],
+    enrolledSchemes: [
+      {
+        schemeId: 'scheme-2',
+        schemeName: 'Silver Daily 25K',
+        totalAmount: 25000,
+        interestAmount: 2000,
+        payoutAmount: 23000,
+        collectionAmount: 500,
+        frequency: 'daily',
+        durationWeeksOrMonths: 50,
+        enrolledAt: '2026-08-05T00:00:00.000Z',
+      },
+    ],
     email: 'priya.s@outlook.com',
     address: '15/B, 2nd Avenue, Anna Nagar',
     city: 'Chennai',
@@ -308,6 +349,20 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     startDate: '2026-04-10T00:00:00.000Z',
     // Last payment was Aug 24, 2026. Next is Aug 31, 2026.
     nextPaymentDate: '2026-08-31T09:15:00.000Z',
+    enrolledSchemeIds: ['scheme-3'],
+    enrolledSchemes: [
+      {
+        schemeId: 'scheme-3',
+        schemeName: 'Gold Weekly 1L',
+        totalAmount: 100000,
+        interestAmount: 8000,
+        payoutAmount: 92000,
+        collectionAmount: 2000,
+        frequency: 'weekly',
+        durationWeeksOrMonths: 50,
+        enrolledAt: '2026-04-10T00:00:00.000Z',
+      },
+    ],
     email: 'anitha.r@gmail.com',
     address: '78, Gandhi Road, T. Nagar',
     city: 'Chennai',

@@ -7,8 +7,19 @@ import { formatDateShort, getPaymentStatusInfo, formatFrequency } from '../../ut
 import { StatusBar } from 'expo-status-bar';
 
 export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { getAdminStats, customers, payments, resetData, logout, getCustomerStats } = useChitData();
+  const { getAdminStats, customers, payments, schemes, resetData, logout, getCustomerStats } = useChitData();
   const stats = getAdminStats();
+
+  const schemeDistribution = schemes.map((s) => {
+    const enrolledMembers = customers.filter((c) => c.schemeId === s.id);
+    const totalAllocated = enrolledMembers.reduce((sum, c) => sum + c.amountGiven, 0);
+    return {
+      scheme: s,
+      members: enrolledMembers,
+      count: enrolledMembers.length,
+      totalAllocated,
+    };
+  });
 
   const overdueCustomers = customers.filter((c) => {
     const custStats = getCustomerStats(c.id);
@@ -118,6 +129,51 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
             ₹{stats.totalCollected.toLocaleString('en-IN')} collected out of ₹{stats.totalGiven.toLocaleString('en-IN')} overall limit
           </Text>
         </Card>
+
+        {/* Scheme Allocations & Customer Distribution Section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Scheme Allocations & Active Members</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Schemes')}>
+            <Text style={styles.sectionLink}>Manage Schemes →</Text>
+          </TouchableOpacity>
+        </View>
+
+        {schemeDistribution.map(({ scheme: s, members, count, totalAllocated }) => (
+          <Card key={s.id} style={styles.schemeAllocCard} padding={SPACING.md}>
+            <View style={styles.schemeAllocHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.schemeAllocName}>{s.name}</Text>
+                <Text style={styles.schemeAllocTerms}>
+                  ₹{s.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(s.frequency)} ({s.durationWeeksOrMonths} collections)
+                </Text>
+              </View>
+              <View style={[styles.schemeAllocBadge, count > 0 && styles.schemeAllocBadgeActive]}>
+                <Text style={[styles.schemeAllocBadgeText, count > 0 && styles.schemeAllocBadgeTextActive]}>
+                  {count} {count === 1 ? 'Member' : 'Members'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.schemeAllocDivider} />
+
+            <View style={styles.schemeAllocMetricsRow}>
+              <View>
+                <Text style={styles.schemeAllocMetricLabel}>TOTAL ALLOCATED</Text>
+                <Text style={styles.schemeAllocMetricVal}>
+                  ₹{totalAllocated.toLocaleString('en-IN')}
+                </Text>
+              </View>
+              <View style={{ alignItems: 'flex-end', flex: 1, marginLeft: SPACING.md }}>
+                <Text style={styles.schemeAllocMetricLabel}>MEMBERS ENROLLED</Text>
+                <Text style={styles.schemeAllocMembersText} numberOfLines={1}>
+                  {members.length > 0
+                    ? members.map((m) => m.name).join(', ')
+                    : 'No active members'}
+                </Text>
+              </View>
+            </View>
+          </Card>
+        ))}
 
         {/* Recent Collections */}
         <View style={styles.sectionHeader}>
@@ -429,6 +485,73 @@ const styles = StyleSheet.create({
   resetBtnText: {
     ...TYPOGRAPHY.captionBold,
     color: COLORS.danger,
+  },
+  // Scheme Allocations Styles
+  schemeAllocCard: {
+    marginBottom: SPACING.sm + 2,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+  },
+  schemeAllocHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  schemeAllocName: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.primary,
+  },
+  schemeAllocTerms: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  schemeAllocBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  schemeAllocBadgeActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  schemeAllocBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textMuted,
+    fontSize: 10,
+  },
+  schemeAllocBadgeTextActive: {
+    color: '#059669',
+  },
+  schemeAllocDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: SPACING.sm,
+  },
+  schemeAllocMetricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  schemeAllocMetricLabel: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textLight,
+    fontSize: 9,
+    letterSpacing: 0.5,
+  },
+  schemeAllocMetricVal: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.success,
+    marginTop: 1,
+  },
+  schemeAllocMembersText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.text,
+    marginTop: 1,
   },
 });
 

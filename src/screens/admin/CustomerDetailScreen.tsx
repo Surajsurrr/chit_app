@@ -36,13 +36,19 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
   }
 
   const scheme = schemes.find((s) => s.id === customer.schemeId);
+  const enrolledSnapshot = customer.enrolledSchemes?.find((es) => es.schemeId === customer.schemeId)
+    || customer.enrolledSchemes?.[customer.enrolledSchemes.length - 1];
+  const schemeName = enrolledSnapshot?.schemeName || scheme?.name || 'Chit Scheme';
+  const schemeValue = enrolledSnapshot?.totalAmount || customer.amountGiven;
+  const interestAmount = enrolledSnapshot?.interestAmount ?? scheme?.interestAmount ?? 0;
+  const payoutAmount = enrolledSnapshot?.payoutAmount ?? (scheme?.payoutAmount ?? Math.max(0, schemeValue - interestAmount));
+
   const stats = getCustomerStats(customerId);
   const customerPayments = payments.filter((p) => p.customerId === customerId);
   const statusInfo = getPaymentStatusInfo(customer.nextPaymentDate, stats.remainingAmount, customer.frequency);
   const isOverdue = statusInfo.isOverdue;
 
   const handleSendMessage = () => {
-    const schemeName = scheme ? scheme.name : 'Chit Scheme';
     let defaultMsg = '';
     if (isOverdue) {
       defaultMsg = `Dear ${customer.name}, this is an urgent reminder from ChitFlow. Your chit installment of ₹${customer.collectionAmount.toLocaleString('en-IN')} for "${schemeName}" is OVERDUE (${statusInfo.statusText}). Please settle your payment immediately. Thank you!`;
@@ -148,26 +154,36 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
         {/* Scheme & Payment Terms Card */}
         <Text style={styles.sectionTitle}>Collection Scheme & Payout Details</Text>
         <Card style={styles.infoCard}>
+          <View style={styles.lockedContractBadge}>
+            <Text style={styles.lockedContractIcon}>🔒</Text>
+            <View style={{ flex: 1, marginLeft: SPACING.xs }}>
+              <Text style={styles.lockedContractTitle}>PERMANENT ENROLLED CONTRACT</Text>
+              <Text style={styles.lockedContractSub}>
+                Agreed at enrollment ({formatDateShort(enrolledSnapshot?.enrolledAt || customer.startDate)}) · Terms locked forever
+              </Text>
+            </View>
+          </View>
+
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Chit Scheme</Text>
-            <Text style={styles.infoValue}>{scheme ? scheme.name : 'Not Assigned'}</Text>
+            <Text style={styles.infoValue}>{schemeName}</Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Total Scheme Value</Text>
-            <Text style={styles.infoValue}>₹{customer.amountGiven.toLocaleString('en-IN')}</Text>
+            <Text style={styles.infoValue}>₹{schemeValue.toLocaleString('en-IN')}</Text>
           </View>
-          {scheme && (scheme.interestAmount !== undefined) ? (
+          {interestAmount > 0 ? (
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Upfront Interest Deducted</Text>
               <Text style={[styles.infoValue, { color: '#D97706' }]}>
-                - ₹{scheme.interestAmount.toLocaleString('en-IN')} ({((scheme.interestAmount / customer.amountGiven) * 100).toFixed(1)}% rate)
+                - ₹{interestAmount.toLocaleString('en-IN')} ({((interestAmount / schemeValue) * 100).toFixed(1)}% rate)
               </Text>
             </View>
           ) : null}
           <View style={[styles.infoRow, styles.payoutRow]}>
             <Text style={styles.payoutRowLabel}>Net Disbursed Payout (Received)</Text>
             <Text style={styles.payoutRowValue}>
-              ₹{(scheme?.payoutAmount ?? (customer.amountGiven - (scheme?.interestAmount ?? 0))).toLocaleString('en-IN')}
+              ₹{payoutAmount.toLocaleString('en-IN')}
             </Text>
           </View>
           <View style={styles.infoRow}>
@@ -196,7 +212,8 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
             <Text style={styles.explanationIcon}>ℹ️</Text>
             <Text style={styles.explanationText}>
               {scheme?.description ||
-                `Customer receives net ₹${(scheme?.payoutAmount ?? (customer.amountGiven - (scheme?.interestAmount ?? 0))).toLocaleString('en-IN')} upfront after ₹${(scheme?.interestAmount ?? 0).toLocaleString('en-IN')} interest deduction on the ₹${customer.amountGiven.toLocaleString('en-IN')} scheme value.`}
+                `Customer receives net ₹${payoutAmount.toLocaleString('en-IN')} upfront after ₹${interestAmount.toLocaleString('en-IN')} interest deduction on the ₹${schemeValue.toLocaleString('en-IN')} scheme value.`}
+              {'\n'}• Terms are permanent for this customer. Any modifications to scheme templates in Admin affect only future new enrollments.
             </Text>
           </View>
 
@@ -457,6 +474,32 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     marginBottom: SPACING.md,
     marginTop: SPACING.sm,
+  },
+  lockedContractBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: SPACING.sm,
+    borderRadius: 8,
+    marginBottom: SPACING.sm + 2,
+  },
+  lockedContractIcon: {
+    fontSize: 16,
+    marginRight: SPACING.xs,
+  },
+  lockedContractTitle: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#0F172A',
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
+  lockedContractSub: {
+    ...TYPOGRAPHY.caption,
+    color: '#64748B',
+    fontSize: 10,
+    marginTop: 1,
   },
   infoCard: {
     marginBottom: SPACING.lg,
