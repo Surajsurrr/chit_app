@@ -137,6 +137,9 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
       return;
     }
 
+    const freqStr = frequency === 'every_3_days' ? 'every 3 days' : frequency;
+    const autoDesc = `Total Chit Value is ₹${total.toLocaleString('en-IN')}. An upfront interest of ₹${parsedInterest.toLocaleString('en-IN')} is deducted, giving the customer a net payout of ₹${payout.toLocaleString('en-IN')}. The customer repays ₹${total.toLocaleString('en-IN')} across ${dur} installments of ₹${collection.toLocaleString('en-IN')} (${freqStr}).`;
+
     if (editingSchemeId) {
       // Update existing scheme
       updateScheme(editingSchemeId, {
@@ -147,6 +150,7 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         payoutAmount: payout,
         frequency,
         durationWeeksOrMonths: dur,
+        description: autoDesc,
       });
     } else {
       // Add new scheme
@@ -158,6 +162,7 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         payoutAmount: payout,
         frequency,
         durationWeeksOrMonths: dur,
+        description: autoDesc,
       });
     }
 

@@ -10,8 +10,14 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   const { getAdminStats, customers, payments, schemes, resetData, logout, getCustomerStats, isAdminProfileComplete } = useChitData();
   const stats = getAdminStats();
 
+  const enrolledCustomers = customers.filter(
+    (c) => Boolean(c.schemeId && c.schemeId.trim() !== '') || (c.enrolledSchemes && c.enrolledSchemes.length > 0)
+  );
+
   const schemeDistribution = schemes.map((s) => {
-    const enrolledMembers = customers.filter((c) => c.schemeId === s.id);
+    const enrolledMembers = customers.filter(
+      (c) => c.schemeId === s.id || c.enrolledSchemeIds?.includes(s.id)
+    );
     const totalAllocated = enrolledMembers.reduce((sum, c) => sum + c.amountGiven, 0);
     return {
       scheme: s,
@@ -159,6 +165,131 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
             ₹{stats.totalCollected.toLocaleString('en-IN')} collected out of ₹{stats.totalGiven.toLocaleString('en-IN')} overall limit
           </Text>
         </Card>
+
+        {/* Customer Scheme Enrollments (Availed Schemes) Section */}
+        <View style={styles.sectionHeader}>
+          <View>
+            <Text style={styles.sectionTitle}>Customer Enrollments & Availed Schemes</Text>
+            <Text style={styles.sectionSubtitleText}>
+              Live customer roster with availed scheme terms & repayment progress
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => navigation.navigate('Customers')}>
+            <Text style={styles.sectionLink}>View All ({customers.length}) →</Text>
+          </TouchableOpacity>
+        </View>
+
+        {enrolledCustomers.length === 0 ? (
+          <Card style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>No Customers Have Availed Schemes</Text>
+            <Text style={styles.emptyText}>
+              When a customer selects and avails a scheme from their portal, their full profile and enrolled scheme details will appear here.
+            </Text>
+          </Card>
+        ) : (
+          enrolledCustomers.map((c) => {
+            const custStats = getCustomerStats(c.id);
+            const enrolledScheme = schemes.find((s) => s.id === c.schemeId);
+            const snapshot = c.enrolledSchemes?.find((es) => es.schemeId === c.schemeId) || c.enrolledSchemes?.[0];
+            const schemeName = snapshot?.schemeName || enrolledScheme?.name || 'Availed Chit Scheme';
+            const totalValue = snapshot?.totalAmount || c.amountGiven || 0;
+            const interest = snapshot?.interestAmount ?? enrolledScheme?.interestAmount ?? 0;
+            const payout = snapshot?.payoutAmount ?? (enrolledScheme?.payoutAmount ?? Math.max(0, totalValue - interest));
+            const installment = snapshot?.collectionAmount || c.collectionAmount || 0;
+            const freq = snapshot?.frequency || c.frequency;
+            const paymentStatus = getPaymentStatusInfo(c.nextPaymentDate, custStats.remainingAmount, c.frequency);
+
+            return (
+              <Card key={c.id} style={styles.enrolledCustCard} padding={SPACING.md}>
+                {/* Customer Details Row */}
+                <View style={styles.enrolledCustHeader}>
+                  <View style={styles.enrolledCustAvatar}>
+                    <Text style={styles.enrolledCustAvatarText}>
+                      {c.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1, marginLeft: SPACING.sm }}>
+                    <View style={styles.nameBadgeRow}>
+                      <Text style={styles.enrolledCustName}>{c.name}</Text>
+                      <View style={styles.availedSchemePill}>
+                        <Text style={styles.availedSchemePillText}>AVAILED</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.enrolledCustPhone}>📞 +91 {c.phone}</Text>
+                    {c.email ? (
+                      <Text style={styles.enrolledCustMeta}>✉️ {c.email}</Text>
+                    ) : null}
+                    {c.address ? (
+                      <Text style={styles.enrolledCustMeta} numberOfLines={2}>
+                        📍 {c.address}{c.city ? `, ${c.city}` : ''}{c.pincode ? ` - ${c.pincode}` : ''}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+
+                <View style={styles.enrolledCustDivider} />
+
+                {/* Availed Scheme Banner */}
+                <View style={styles.availedSchemeBanner}>
+                  <Text style={styles.availedSchemeIcon}>🪙</Text>
+                  <View style={{ flex: 1, marginLeft: SPACING.xs + 2 }}>
+                    <Text style={styles.availedSchemeName}>{schemeName}</Text>
+                    <Text style={styles.availedSchemeTerms}>
+                      ₹{installment.toLocaleString('en-IN')} / {formatFrequency(freq)} · Next Due: {formatDateShort(c.nextPaymentDate)}
+                    </Text>
+                  </View>
+                  <View style={[styles.statusBadge, paymentStatus.isOverdue && styles.statusBadgeOverdue]}>
+                    <Text style={[styles.statusBadgeText, paymentStatus.isOverdue && styles.statusBadgeTextOverdue]}>
+                      {paymentStatus.isOverdue ? 'Overdue' : 'Active'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Scheme Financial Parameter Grid */}
+                <View style={styles.enrolledCustGrid}>
+                  <View style={styles.enrolledGridItem}>
+                    <Text style={styles.enrolledGridLabel}>SCHEME VALUE</Text>
+                    <Text style={styles.enrolledGridVal}>₹{totalValue.toLocaleString('en-IN')}</Text>
+                  </View>
+                  <View style={styles.enrolledGridItem}>
+                    <Text style={styles.enrolledGridLabel}>NET PAYOUT</Text>
+                    <Text style={styles.enrolledGridValHighlight}>₹{payout.toLocaleString('en-IN')}</Text>
+                  </View>
+                  <View style={styles.enrolledGridItem}>
+                    <Text style={styles.enrolledGridLabel}>PAID SO FAR</Text>
+                    <Text style={styles.enrolledGridValSuccess}>₹{custStats.paidAmount.toLocaleString('en-IN')}</Text>
+                  </View>
+                  <View style={styles.enrolledGridItem}>
+                    <Text style={styles.enrolledGridLabel}>REMAINING</Text>
+                    <Text style={styles.enrolledGridValWarning}>₹{custStats.remainingAmount.toLocaleString('en-IN')}</Text>
+                  </View>
+                </View>
+
+                {/* Repayment Progress Bar */}
+                <View style={styles.repaymentProgressBox}>
+                  <View style={styles.repaymentProgressHeader}>
+                    <Text style={styles.repaymentProgressLabel}>Repayment Progress</Text>
+                    <Text style={styles.repaymentProgressVal}>{custStats.progressPercentage.toFixed(0)}%</Text>
+                  </View>
+                  <View style={styles.repaymentProgressBg}>
+                    <View style={[styles.repaymentProgressFg, { width: `${custStats.progressPercentage}%` }]} />
+                  </View>
+                </View>
+
+                {/* Action Link to Customer Detail */}
+                <View style={styles.custCardFooterRow}>
+                  <TouchableOpacity
+                    style={styles.viewCustDetailsBtn}
+                    onPress={() => navigation.navigate('CustomerDetail', { customerId: c.id })}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.viewCustDetailsBtnText}>Manage Customer & Collect Installment →</Text>
+                  </TouchableOpacity>
+                </View>
+              </Card>
+            );
+          })
+        )}
 
         {/* Scheme Allocations & Customer Distribution Section */}
         <View style={styles.sectionHeader}>
@@ -639,6 +770,219 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.captionBold,
     color: COLORS.text,
     marginTop: 1,
+  },
+  sectionSubtitleText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginTop: 2,
+    fontSize: 11,
+  },
+  enrolledCustCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: SPACING.md,
+    ...SHADOWS.sm,
+  },
+  enrolledCustHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  enrolledCustAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  enrolledCustAvatarText: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.white,
+  },
+  nameBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  enrolledCustName: {
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
+    color: COLORS.text,
+    fontSize: 15,
+  },
+  availedSchemePill: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  availedSchemePillText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#059669',
+    fontSize: 9,
+    letterSpacing: 0.5,
+  },
+  enrolledCustPhone: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.primary,
+    marginTop: 2,
+    fontSize: 12,
+  },
+  enrolledCustMeta: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginTop: 2,
+    fontSize: 11,
+  },
+  enrolledCustDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: SPACING.sm + 2,
+  },
+  availedSchemeBanner: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: SPACING.sm + 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  availedSchemeIcon: {
+    fontSize: 20,
+  },
+  availedSchemeName: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.primary,
+    fontSize: 13,
+  },
+  availedSchemeTerms: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    fontSize: 11,
+    marginTop: 1,
+  },
+  statusBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  statusBadgeOverdue: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+  },
+  statusBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#059669',
+    fontSize: 10,
+  },
+  statusBadgeTextOverdue: {
+    color: '#DC2626',
+  },
+  enrolledCustGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    padding: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  enrolledGridItem: {
+    flex: 1,
+  },
+  enrolledGridLabel: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textLight,
+    fontSize: 9,
+    letterSpacing: 0.3,
+  },
+  enrolledGridVal: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.text,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  enrolledGridValHighlight: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.primary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  enrolledGridValSuccess: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.success,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  enrolledGridValWarning: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#D97706',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  repaymentProgressBox: {
+    marginBottom: SPACING.sm,
+  },
+  repaymentProgressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  repaymentProgressLabel: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    fontSize: 10,
+  },
+  repaymentProgressVal: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.text,
+    fontSize: 10,
+  },
+  repaymentProgressBg: {
+    height: 5,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  repaymentProgressFg: {
+    height: '100%',
+    backgroundColor: COLORS.success,
+    borderRadius: 3,
+  },
+  custCardFooterRow: {
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    paddingTop: SPACING.sm,
+    marginTop: 2,
+    alignItems: 'flex-end',
+  },
+  viewCustDetailsBtn: {
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  viewCustDetailsBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.primary,
+    fontSize: 11,
+  },
+  emptyTitle: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.text,
+    marginBottom: SPACING.xs,
+    textAlign: 'center',
   },
 });
 

@@ -101,17 +101,20 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
       return;
     }
 
+    const targetCustomer = customers.find((c) => c.id === selectedCustId);
     const result = recordPayment(selectedCustId, amount, paymentMethod);
     
     if (result.success && result.receipt) {
       selectCustomer(selectedCustId);
       setIsModalVisible(false);
-      // Automatically show the downloadable invoice proof
-      navigation.navigate('ReceiptDetail', {
-        receiptId: result.receipt.id,
-        autoDownload: true,
-        isNewPayment: true,
-      });
+      setPaymentAmount('');
+      setSelectedCustId('');
+      setFormError('');
+
+      Alert.alert(
+        'Collection Recorded! ✓',
+        `Payment of ₹${amount.toLocaleString('en-IN')} has been recorded and overdue cleared${targetCustomer ? ` for ${targetCustomer.name}` : ''}.\n\nThe official invoice is available for the customer to view and print from the Receipts tab in their Customer Dashboard.`
+      );
     } else {
       setFormError(result.error || 'Failed to record collection');
     }

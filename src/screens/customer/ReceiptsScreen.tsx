@@ -216,29 +216,31 @@ export const ReceiptsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
         {/* Bottom Actions Row */}
         <View style={styles.actionsRow}>
-          {/* Download PDF Button */}
-          <TouchableOpacity
-            style={[styles.downloadBtn, isDownloadingThis && styles.downloadBtnActive]}
-            onPress={() => handleDownloadSingleReceipt(item)}
-            disabled={isDownloadingThis}
-            activeOpacity={0.8}
-          >
-            {isDownloadingThis ? (
-              <View style={styles.btnInnerRow}>
-                <ActivityIndicator size="small" color={COLORS.white} />
-                <Text style={styles.downloadBtnText}>Generating PDF...</Text>
-              </View>
-            ) : (
-              <View style={styles.btnInnerRow}>
-                <Text style={styles.downloadBtnIcon}>📥</Text>
-                <Text style={styles.downloadBtnText}>Download Receipt (PDF)</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          {/* Download PDF Button — strictly for customers alone */}
+          {!isAdmin && (
+            <TouchableOpacity
+              style={[styles.downloadBtn, isDownloadingThis && styles.downloadBtnActive]}
+              onPress={() => handleDownloadSingleReceipt(item)}
+              disabled={isDownloadingThis}
+              activeOpacity={0.8}
+            >
+              {isDownloadingThis ? (
+                <View style={styles.btnInnerRow}>
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                  <Text style={styles.downloadBtnText}>Generating PDF...</Text>
+                </View>
+              ) : (
+                <View style={styles.btnInnerRow}>
+                  <Text style={styles.downloadBtnIcon}>📥</Text>
+                  <Text style={styles.downloadBtnText}>Download Receipt (PDF)</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
 
           {/* View Details Button */}
           <TouchableOpacity
-            style={styles.viewDetailBtn}
+            style={[styles.viewDetailBtn, isAdmin && { flex: 1, alignItems: 'center' }]}
             onPress={() => navigation.navigate('ReceiptDetail', { receiptId: item.id })}
             activeOpacity={0.7}
           >
@@ -261,7 +263,7 @@ export const ReceiptsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           </Text>
           <Text style={styles.headerSubtitle}>
             {isAdmin
-              ? 'All verified customer payment receipts with instant download'
+              ? 'Official verified customer payment receipts register'
               : 'All payment receipts recorded for your chit scheme'}
           </Text>
         </View>
@@ -282,21 +284,23 @@ export const ReceiptsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
             </Text>
           </View>
 
-          <TouchableOpacity
-            style={[styles.exportAllBtn, isExportingAll && styles.exportAllBtnDisabled]}
-            onPress={handleDownloadAllReceipts}
-            disabled={isExportingAll}
-            activeOpacity={0.85}
-          >
-            {isExportingAll ? (
-              <ActivityIndicator size="small" color={COLORS.white} />
-            ) : (
-              <>
-                <Text style={styles.exportAllIcon}>📥</Text>
-                <Text style={styles.exportAllText}>Download All (PDF)</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {!isAdmin && (
+            <TouchableOpacity
+              style={[styles.exportAllBtn, isExportingAll && styles.exportAllBtnDisabled]}
+              onPress={handleDownloadAllReceipts}
+              disabled={isExportingAll}
+              activeOpacity={0.85}
+            >
+              {isExportingAll ? (
+                <ActivityIndicator size="small" color={COLORS.white} />
+              ) : (
+                <>
+                  <Text style={styles.exportAllIcon}>📥</Text>
+                  <Text style={styles.exportAllText}>Download All (PDF)</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Search Bar */}

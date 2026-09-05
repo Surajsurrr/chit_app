@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -16,6 +16,7 @@ import TransactionRow from '../../components/TransactionRow';
 import { formatDateLong, formatDateShort, getPaymentStatusInfo, formatFrequency } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
 import { Scheme } from '../../data/mockData';
+import { AvailSchemeModal } from '../../components/AvailSchemeModal';
 
 export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const {
@@ -68,55 +69,44 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const statusInfo = getPaymentStatusInfo(customer.nextPaymentDate, stats.remainingAmount, customer.frequency);
   const isOverdue = hasAvailedScheme && statusInfo.isOverdue;
 
+  const [confirmScheme, setConfirmScheme] = useState<Scheme | null>(null);
+  const [isAvailing, setIsAvailing] = useState<boolean>(false);
+  const [availSuccessScheme, setAvailSuccessScheme] = useState<Scheme | null>(null);
+
   const handleSelectScheme = (selectedScheme: Scheme) => {
-    if (hasAvailedScheme && selectedScheme.id === customer.schemeId) return;
+    const sInterest = selectedScheme.interestAmount || 0;
+    const sPayout = selectedScheme.payoutAmount || Math.max(0, selectedScheme.totalAmount - sInterest);
+    const isCurrentActive = hasAvailedScheme &&
+      selectedScheme.id === customer.schemeId &&
+      selectedScheme.totalAmount === activeSchemeValue &&
+      sInterest === activeInterest &&
+      sPayout === activePayout &&
+      selectedScheme.collectionAmount === customer.collectionAmount &&
+      selectedScheme.frequency === customer.frequency;
 
-    // 1. Mandatory Admin Profile Setup Check
-    if (!isAdminProfileComplete) {
-      Alert.alert(
-        'Schemes Unavailable 🔒',
-        'The chit fund organizer has not completed their profile setup yet. Schemes cannot be chosen until the organizer sets up their profile.'
-      );
-      return;
+    if (isCurrentActive) return;
+    setConfirmScheme(selectedScheme);
+  };
+
+  const handleConfirmAvail = async (selectedScheme: Scheme) => {
+    setIsAvailing(true);
+    try {
+      const res = await updateCustomerScheme(customer.id, selectedScheme.id);
+      if (res.success) {
+        setAvailSuccessScheme(selectedScheme);
+      } else {
+        Alert.alert('Unable to Avail Scheme', res.error || 'Failed to update scheme. Please try again.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'An unexpected error occurred.');
+    } finally {
+      setIsAvailing(false);
     }
+  };
 
-    // 2. Mandatory Customer Profile Setup Check
-    if (!isCustProfileComplete) {
-      Alert.alert(
-        'Profile Setup Required 📝',
-        'You must complete your profile details (including Email and Residential Address) before choosing or enrolling in a scheme.\n\nTap "Complete Profile" to update your details now.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Complete Profile', onPress: () => navigation.navigate('Profile') },
-        ]
-      );
-      return;
-    }
-
-    const interest = selectedScheme.interestAmount || 0;
-    const payout = selectedScheme.payoutAmount || (selectedScheme.totalAmount - interest);
-
-    Alert.alert(
-      'Enroll in Scheme',
-      `Would you like to choose "${selectedScheme.name}" as your active scheme?\n\n• Total Scheme Value: ₹${selectedScheme.totalAmount.toLocaleString('en-IN')}\n• Upfront Net Payout: ₹${payout.toLocaleString('en-IN')}\n• Repayment: ₹${selectedScheme.collectionAmount.toLocaleString('en-IN')} (${formatFrequency(selectedScheme.frequency)})\n• Duration: ${selectedScheme.durationWeeksOrMonths} installments`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm & Enroll',
-          onPress: async () => {
-            const res = await updateCustomerScheme(customer.id, selectedScheme.id);
-            if (res.success) {
-              Alert.alert(
-                'Scheme Updated! 🎉',
-                `You have successfully enrolled in "${selectedScheme.name}". Your dashboard has been updated with the new scheme parameters.`
-              );
-            } else {
-              Alert.alert('Error', res.error || 'Failed to update scheme');
-            }
-          },
-        },
-      ]
-    );
+  const handleSuccessDone = () => {
+    setConfirmScheme(null);
+    setAvailSuccessScheme(null);
   };
 
   const handleLogout = () => {
@@ -342,9 +332,8 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           {/* Customer Explanation Note */}
           <View style={styles.customerNoticeBox}>
             <Text style={styles.noticeIcon}>ℹ️</Text>
-<Text style={styles.noticeText}>
-              {scheme?.description ||
-                `You receive a net payout of ₹${activePayout.toLocaleString('en-IN')} upfront (after ₹${activeInterest.toLocaleString('en-IN')} interest deduction), and repay ₹${activeSchemeValue.toLocaleString('en-IN')} across scheduled installments.`}
+            <Text style={styles.noticeText}>
+              You receive a net payout of ₹{activePayout.toLocaleString('en-IN')} upfront (after ₹{activeInterest.toLocaleString('en-IN')} interest deduction), and repay ₹{activeSchemeValue.toLocaleString('en-IN')} across scheduled installments.
               {'\n'}• Your enrolled terms are locked forever. Future modifications by admin to general scheme templates will never affect your agreement.
             </Text>
           </View>
@@ -355,105 +344,75 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         <View style={styles.sectionHeaderBox}>
           <Text style={styles.sectionTitle}>Available Admin Schemes</Text>
           <Text style={styles.sectionSubtitle}>
-            {isAdminProfileComplete
-              ? 'Choose or switch to any scheme offered by the organizer'
-              : 'Schemes visibility locked until organizer completes profile setup'}
+            Choose or switch to any scheme offered by the organizer
           </Text>
         </View>
 
-        {!isAdminProfileComplete ? (
-          <Card style={styles.lockedCard}>
-            <View style={styles.lockedIconBox}>
-              <Text style={styles.lockedIcon}>🔒</Text>
-            </View>
-            <Text style={styles.lockedTitle}>Chit Schemes Unavailable</Text>
-            <Text style={styles.lockedText}>
-              The chit fund organizer has not completed their mandatory profile setup yet. Schemes will become visible once the administrator completes their verified organizer profile.
-            </Text>
-            <View style={styles.lockedBadge}>
-              <Text style={styles.lockedBadgeText}>Organizer Setup Pending</Text>
-            </View>
-          </Card>
-        ) : (
-          <>
-            {!isCustProfileComplete && (
-              <TouchableOpacity
-                style={styles.customerIncompleteBanner}
-                onPress={() => navigation.navigate('Profile')}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.customerIncompleteIcon}>⚠️</Text>
-                <View style={{ flex: 1, marginLeft: SPACING.sm }}>
-                  <Text style={styles.customerIncompleteTitle}>Profile Setup Required</Text>
-                  <Text style={styles.customerIncompleteText}>
-                    You must complete your profile details (Email and Residential Address) in the Profile tab to choose or enroll in a scheme.
+        {schemes.map((s) => {
+          const interest = s.interestAmount || 0;
+          const interestRate = s.totalAmount > 0 ? ((interest / s.totalAmount) * 100).toFixed(1) : '0';
+          const payout = s.payoutAmount || Math.max(0, s.totalAmount - interest);
+
+          // BUSINESS RULE: A scheme in the list is the active scheme ONLY if its terms
+          // match the customer's enrolled contract (old interest & old payout).
+          // If the admin edited the scheme with new interest/payout, it is a separate new unavailed scheme!
+          const matchesContractTerms = hasAvailedScheme &&
+            s.totalAmount === activeSchemeValue &&
+            interest === activeInterest &&
+            payout === activePayout &&
+            s.collectionAmount === customer.collectionAmount &&
+            s.frequency === customer.frequency;
+
+          const isCurrent = matchesContractTerms;
+
+          const accurateDesc = `Total Chit Value is ₹${s.totalAmount.toLocaleString('en-IN')}. An upfront interest of ₹${interest.toLocaleString('en-IN')} is deducted, giving the customer a net payout of ₹${payout.toLocaleString('en-IN')}. The customer repays ₹${s.totalAmount.toLocaleString('en-IN')} across ${s.durationWeeksOrMonths} installments of ₹${s.collectionAmount.toLocaleString('en-IN')} (${formatFrequency(s.frequency)}).`;
+
+          return (
+            <Card key={s.id} style={[styles.availableSchemeCard, isCurrent && styles.activeSchemeCardBorder]}>
+              <View style={styles.schemeCardHeader}>
+                <View style={{ flex: 1, marginRight: SPACING.sm }}>
+                  <Text style={styles.schemeCardName}>{s.name}</Text>
+                  <Text style={styles.schemeCardTag}>
+                    ₹{s.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(s.frequency)} ({s.durationWeeksOrMonths} collections)
                   </Text>
                 </View>
-                <Text style={styles.customerIncompleteAction}>Setup →</Text>
-              </TouchableOpacity>
-            )}
 
-            {schemes.map((s) => {
-              const isCurrent = hasAvailedScheme && (s.id === customer.schemeId);
-              const interest = s.interestAmount || 0;
-              const interestRate = ((interest / s.totalAmount) * 100).toFixed(1);
-              const payout = s.payoutAmount || Math.max(0, s.totalAmount - interest);
-
-              return (
-                <Card key={s.id} style={[styles.availableSchemeCard, isCurrent && styles.activeSchemeCardBorder]}>
-                  <View style={styles.schemeCardHeader}>
-                    <View style={{ flex: 1, marginRight: SPACING.sm }}>
-                      <Text style={styles.schemeCardName}>{s.name}</Text>
-                      <Text style={styles.schemeCardTag}>
-                        ₹{s.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(s.frequency)} ({s.durationWeeksOrMonths} collections)
-                      </Text>
-                    </View>
-
-                    {isCurrent ? (
-                      <View style={styles.enrolledBadge}>
-                        <Text style={styles.enrolledBadgeText}>✓ Active Scheme</Text>
-                      </View>
-                    ) : (
-                      <TouchableOpacity
-                        style={[
-                          styles.selectSchemeBtn,
-                          !isCustProfileComplete && styles.selectSchemeBtnDisabled,
-                        ]}
-                        onPress={() => handleSelectScheme(s)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={styles.selectSchemeBtnText}>
-                          {isCustProfileComplete ? 'Avail Scheme →' : 'Complete Profile'}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
+                {isCurrent ? (
+                  <View style={styles.enrolledBadge}>
+                    <Text style={styles.enrolledBadgeText}>✓ Active Scheme</Text>
                   </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.selectSchemeBtn}
+                    onPress={() => handleSelectScheme(s)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.selectSchemeBtnText}>Avail Scheme →</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
 
-                  <View style={styles.schemeCardDivider} />
+              <View style={styles.schemeCardDivider} />
 
-                  <View style={styles.schemeCardGrid}>
-                    <View style={styles.schemeCardCol}>
-                      <Text style={styles.schemeCardLabel}>TOTAL VALUE</Text>
-                      <Text style={styles.schemeCardVal}>₹{s.totalAmount.toLocaleString('en-IN')}</Text>
-                    </View>
-                    <View style={styles.schemeCardCol}>
-                      <Text style={styles.schemeCardLabel}>INTEREST DEDUCTION</Text>
-                      <Text style={styles.schemeCardInterest}>- ₹{interest.toLocaleString('en-IN')} ({interestRate}%)</Text>
-                    </View>
-                    <View style={styles.schemeCardCol}>
-                      <Text style={styles.schemeCardLabel}>NET PAYOUT</Text>
-                      <Text style={styles.schemeCardPayout}>₹{payout.toLocaleString('en-IN')}</Text>
-                    </View>
-                  </View>
+              <View style={styles.schemeCardGrid}>
+                <View style={styles.schemeCardCol}>
+                  <Text style={styles.schemeCardLabel}>TOTAL VALUE</Text>
+                  <Text style={styles.schemeCardVal}>₹{s.totalAmount.toLocaleString('en-IN')}</Text>
+                </View>
+                <View style={styles.schemeCardCol}>
+                  <Text style={styles.schemeCardLabel}>INTEREST DEDUCTION</Text>
+                  <Text style={styles.schemeCardInterest}>- ₹{interest.toLocaleString('en-IN')} ({interestRate}%)</Text>
+                </View>
+                <View style={styles.schemeCardCol}>
+                  <Text style={styles.schemeCardLabel}>NET PAYOUT</Text>
+                  <Text style={styles.schemeCardPayout}>₹{payout.toLocaleString('en-IN')}</Text>
+                </View>
+              </View>
 
-                  {s.description ? (
-                    <Text style={styles.schemeCardDesc}>{s.description}</Text>
-                  ) : null}
-                </Card>
-              );
-            })}
-          </>
-        )}
+              <Text style={styles.schemeCardDesc}>{accurateDesc}</Text>
+            </Card>
+          );
+        })}
 
         {/* Recent Payments Collected */}
         <View style={styles.sectionHeader}>
@@ -480,6 +439,22 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           )}
         </Card>
       </ScrollView>
+
+      {/* Interactive Scheme Avail Confirmation & Success Modal */}
+      <AvailSchemeModal
+        visible={Boolean(confirmScheme)}
+        scheme={confirmScheme}
+        onClose={() => {
+          if (!isAvailing) {
+            setConfirmScheme(null);
+            setAvailSuccessScheme(null);
+          }
+        }}
+        onConfirm={handleConfirmAvail}
+        isLoading={isAvailing}
+        successScheme={availSuccessScheme}
+        onSuccessDone={handleSuccessDone}
+      />
     </SafeAreaView>
   );
 };

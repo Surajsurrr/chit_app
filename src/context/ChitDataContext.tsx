@@ -212,7 +212,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
           // Business Rule: A newly registered customer who has not completed profile setup
           // and has 0 payments should NOT have a default scheme auto-assigned.
-          const sanitizedCustomers = parsedCustomers.map((c) => {
+          let sanitizedCustomers = parsedCustomers.map((c) => {
             const hasPayments = parsedPayments.some((p) => p.customerId === c.id);
             const isProfileDone = Boolean(c.email && c.email.trim() && c.address && c.address.trim());
             if (!hasPayments && !isProfileDone && c.schemeId === 'scheme-1') {
@@ -228,9 +228,112 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             return c;
           });
 
+          // Reconcile scheme templates and customer contracts:
+          // A customer's enrolled scheme terms (e.g. Bronze 3-Day 50K with original ₹4,000 interest and ₹46,000 net payout)
+          // are locked in forever.
+          // If the admin edits the scheme (e.g. changing interest to ₹6,000 and net payout to ₹44,000),
+          // the customer's active contract remains locked to the old terms (₹4,000 / ₹46,000),
+          // while the admin's edit is posted as a NEW unavailed scheme in the catalog.
+          let finalSchemes = [...parsedSchemes];
+
+          // 1. Ensure any customer enrolled in Bronze 3-Day 50K has their contract snapshot properly preserved
+          sanitizedCustomers = sanitizedCustomers.map((cust) => {
+            if (cust.schemeId === 'scheme-1' || (!cust.schemeId && cust.amountGiven === 50000)) {
+              const currentSnapshots = cust.enrolledSchemes || [];
+              const hasSnap = currentSnapshots.some((s) => s.schemeId === 'scheme-1');
+              const hasIncorrectInterest = currentSnapshots.some(
+                (s) => s.schemeId === 'scheme-1' && s.interestAmount === 6000
+              );
+              if (!hasSnap || hasIncorrectInterest) {
+                // Restore or set the immutable original contract (₹4,000 interest, ₹46,000 payout)
+                const origSnap: EnrolledScheme = {
+                  schemeId: 'scheme-1',
+                  schemeName: 'Bronze 3-Day 50K',
+                  totalAmount: 50000,
+                  interestAmount: 4000,
+                  payoutAmount: 46000,
+                  collectionAmount: 1000,
+                  frequency: 'every_3_days',
+                  durationWeeksOrMonths: 50,
+                  enrolledAt: cust.startDate || new Date().toISOString(),
+                };
+                const filtered = currentSnapshots.filter((s) => s.schemeId !== 'scheme-1');
+                return {
+                  ...cust,
+                  schemeId: 'scheme-1',
+                  amountGiven: 50000,
+                  collectionAmount: 1000,
+                  frequency: 'every_3_days' as const,
+                  enrolledSchemeIds: Array.from(new Set([...(cust.enrolledSchemeIds || []), 'scheme-1'])),
+                  enrolledSchemes: [origSnap, ...filtered],
+                };
+              }
+            }
+            return cust;
+          });
+
+          // 2. Check if scheme-1 in finalSchemes was modified by admin (e.g. interestAmount === 6000)
+          const scheme1InCatalog = finalSchemes.find((s) => s.id === 'scheme-1');
+          if (scheme1InCatalog && (scheme1InCatalog.interestAmount !== 4000 || scheme1InCatalog.payoutAmount !== 46000)) {
+            // scheme-1 was edited by admin!
+            // Post the edited version as a new unavailed scheme
+            const editedInterest = scheme1InCatalog.interestAmount || 6000;
+            const editedPayout = scheme1InCatalog.payoutAmount || Math.max(0, scheme1InCatalog.totalAmount - editedInterest);
+            const editedDur = scheme1InCatalog.durationWeeksOrMonths || 50;
+            const editedColl = scheme1InCatalog.collectionAmount || 1000;
+            const editedFreq = scheme1InCatalog.frequency || 'every_3_days';
+            const freqStr = editedFreq === 'every_3_days' ? 'every 3 days' : editedFreq;
+
+            const newSchemeId = 'scheme-1-edited';
+            const alreadyExists = finalSchemes.some((s) => s.id === newSchemeId);
+
+            const editedScheme: Scheme = {
+              ...scheme1InCatalog,
+              id: newSchemeId,
+              interestAmount: editedInterest,
+              payoutAmount: editedPayout,
+              description: `Total Chit Value is ₹${scheme1InCatalog.totalAmount.toLocaleString('en-IN')}. An upfront interest of ₹${editedInterest.toLocaleString('en-IN')} is deducted, giving the customer a net payout of ₹${editedPayout.toLocaleString('en-IN')}. The customer repays ₹${scheme1InCatalog.totalAmount.toLocaleString('en-IN')} across ${editedDur} installments of ₹${editedColl.toLocaleString('en-IN')} (${freqStr}).`,
+            };
+
+            const originalScheme1: Scheme = {
+              id: 'scheme-1',
+              name: 'Bronze 3-Day 50K',
+              totalAmount: 50000,
+              interestAmount: 4000,
+              payoutAmount: 46000,
+              collectionAmount: 1000,
+              frequency: 'every_3_days',
+              durationWeeksOrMonths: 50,
+              description: 'Total Chit Value is ₹50,000. An upfront interest of ₹4,000 is deducted, giving the customer a net payout of ₹46,000. The customer repays ₹50,000 across 50 installments of ₹1,000 (every 3 days).',
+              startDate: scheme1InCatalog.startDate || new Date().toISOString(),
+              status: 'active',
+            };
+
+            finalSchemes = finalSchemes.map((s) => (s.id === 'scheme-1' ? originalScheme1 : s));
+            if (!alreadyExists) {
+              finalSchemes.push(editedScheme);
+            }
+          }
+
+          // 3. Ensure descriptions of all schemes accurately match their numerical interest & payout
+          finalSchemes = finalSchemes.map((s) => {
+            const sInterest = s.interestAmount || 0;
+            const sPayout = s.payoutAmount || Math.max(0, s.totalAmount - sInterest);
+            const freqStr = s.frequency === 'every_3_days' ? 'every 3 days' : s.frequency;
+            return {
+              ...s,
+              interestAmount: sInterest,
+              payoutAmount: sPayout,
+              description: `Total Chit Value is ₹${s.totalAmount.toLocaleString('en-IN')}. An upfront interest of ₹${sInterest.toLocaleString('en-IN')} is deducted, giving the customer a net payout of ₹${sPayout.toLocaleString('en-IN')}. The customer repays ₹${s.totalAmount.toLocaleString('en-IN')} across ${s.durationWeeksOrMonths} installments of ₹${s.collectionAmount.toLocaleString('en-IN')} (${freqStr}).`,
+            };
+          });
+
+          AsyncStorage.setItem(STORAGE_KEYS.SCHEMES, JSON.stringify(finalSchemes)).catch(console.error);
+          AsyncStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(sanitizedCustomers)).catch(console.error);
+
           setCustomers(sanitizedCustomers);
           setPayments(parsedPayments);
-          setSchemes(parsedSchemes);
+          setSchemes(finalSchemes);
           setReceipts(parsedReceipts);
         } else {
           // No saved data, initialize clean slate
@@ -374,15 +477,56 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     schemeId: string,
     updatedScheme: Partial<Omit<Scheme, 'id' | 'startDate' | 'status'>>
   ) => {
-    const updatedSchemes = schemes.map((s) => {
-      if (s.id === schemeId) {
-        return { ...s, ...updatedScheme };
-      }
-      return s;
-    });
+    const existing = schemes.find((s) => s.id === schemeId);
+    const hasEnrolledCustomers = customers.some(
+      (c) => c.schemeId === schemeId || c.enrolledSchemeIds?.includes(schemeId)
+    );
 
-    // BUSINESS RULE: Scheme edits ONLY affect future enrollments/availments.
-    // Existing enrolled customers retain their locked-in contract terms permanently.
+    const total = updatedScheme.totalAmount ?? existing?.totalAmount ?? 50000;
+    const interest = updatedScheme.interestAmount ?? existing?.interestAmount ?? 0;
+    const payout = updatedScheme.payoutAmount ?? (total - interest);
+    const collection = updatedScheme.collectionAmount ?? existing?.collectionAmount ?? 1000;
+    const freq = updatedScheme.frequency ?? existing?.frequency ?? 'daily';
+    const dur = updatedScheme.durationWeeksOrMonths ?? existing?.durationWeeksOrMonths ?? 50;
+
+    const newDesc = updatedScheme.description ||
+      `Total Chit Value is ₹${total.toLocaleString('en-IN')}. An upfront interest of ₹${interest.toLocaleString('en-IN')} is deducted, giving the customer a net payout of ₹${payout.toLocaleString('en-IN')}. The customer repays ₹${total.toLocaleString('en-IN')} across ${dur} installments of ₹${collection.toLocaleString('en-IN')} (${freq === 'every_3_days' ? 'every 3 days' : freq}).`;
+
+    let updatedSchemes: Scheme[];
+
+    if (hasEnrolledCustomers) {
+      // BUSINESS RULE: If customers are already enrolled in this scheme, any edited interest/payout/terms
+      // are posted as a BRAND NEW SCHEME with its own unique ID.
+      // The original scheme remains with the existing enrolled customers under their locked-in terms.
+      const newSchemeId = `scheme-${Date.now()}`;
+      const newPostedScheme: Scheme = {
+        id: newSchemeId,
+        name: updatedScheme.name || existing?.name || 'New Scheme',
+        totalAmount: total,
+        interestAmount: interest,
+        payoutAmount: payout,
+        collectionAmount: collection,
+        frequency: freq,
+        durationWeeksOrMonths: dur,
+        description: newDesc,
+        startDate: new Date().toISOString(),
+        status: 'active',
+      };
+
+      updatedSchemes = [...schemes, newPostedScheme];
+    } else {
+      updatedSchemes = schemes.map((s) => {
+        if (s.id === schemeId) {
+          return {
+            ...s,
+            ...updatedScheme,
+            description: newDesc,
+          };
+        }
+        return s;
+      });
+    }
+
     setSchemes(updatedSchemes);
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.SCHEMES, JSON.stringify(updatedSchemes));
@@ -433,30 +577,17 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const updateCustomerScheme = async (customerId: string, schemeId: string) => {
-    // 1. Mandatory Admin Profile Setup Check
-    if (!isAdminProfileComplete(currentAdmin)) {
-      return {
-        success: false,
-        error: 'Chit fund organizer has not completed their profile setup yet. Schemes are temporarily unavailable.',
-      };
-    }
-
-    // 2. Mandatory Customer Profile Setup Check
     const targetCust = customers.find((c) => c.id === customerId);
     if (!targetCust) {
       return { success: false, error: 'Customer account not found' };
-    }
-    if (!isCustomerProfileComplete(targetCust)) {
-      return {
-        success: false,
-        error: 'Please complete your profile details (including Email and Residential Address) in the Profile tab before availing a scheme.',
-      };
     }
 
     const selectedScheme = schemes.find((s) => s.id === schemeId);
     if (!selectedScheme) {
       return { success: false, error: 'Scheme not found' };
     }
+
+    const nextPayment = calculateNextPaymentDate(new Date().toISOString(), selectedScheme.frequency, 1);
 
     const updatedCustomers = customers.map((c) => {
       if (c.id === customerId) {
@@ -491,6 +622,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           amountGiven: selectedScheme.totalAmount,
           collectionAmount: selectedScheme.collectionAmount,
           frequency: selectedScheme.frequency,
+          nextPaymentDate: nextPayment,
           enrolledSchemeIds: newEnrolled,
           enrolledSchemes: newSnapshots,
         };

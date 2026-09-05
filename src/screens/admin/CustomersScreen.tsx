@@ -101,17 +101,17 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
 
     const result = recordPayment(selectedCust.id, amount, paymentMethod);
     if (result.success && result.receipt) {
-      const receiptId = result.receipt.id;
+      const customerName = selectedCust.name;
       selectCustomer(selectedCust.id);
       setIsCollectModalVisible(false);
       setSelectedCust(null);
+      setCollectAmount('');
+      setCollectError('');
 
-      // Automatically show the downloadable invoice proof
-      navigation.navigate('ReceiptDetail', {
-        receiptId,
-        autoDownload: true,
-        isNewPayment: true,
-      });
+      Alert.alert(
+        'Collection Recorded! ✓',
+        `Payment of ₹${amount.toLocaleString('en-IN')} has been recorded for ${customerName}.\n\nThe official invoice is available for the customer to view and print from the Receipts tab in their Customer Dashboard.`
+      );
     } else {
       setCollectError(result.error || 'Failed to record collection');
     }

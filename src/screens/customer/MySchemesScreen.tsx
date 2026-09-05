@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -14,7 +14,8 @@ import Card from '../../components/Card';
 import Button from '../../components/Button';
 import { formatFrequency } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
-import { Scheme } from '../../data/mockData';
+import { Scheme, EnrolledScheme } from '../../data/mockData';
+import { AvailSchemeModal } from '../../components/AvailSchemeModal';
 
 export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const {
@@ -41,66 +42,76 @@ export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   }
 
   const stats = getCustomerStats(customer.id);
-  const enrolledIds = (customer.enrolledSchemeIds && customer.enrolledSchemeIds.length > 0)
-    ? customer.enrolledSchemeIds
-    : (customer.schemeId && customer.schemeId.trim() !== '' ? [customer.schemeId] : []);
-  const availedSchemes = schemes.filter((s) => enrolledIds.includes(s.id));
-  const otherAvailableSchemes = schemes.filter((s) => !enrolledIds.includes(s.id));
+  const enrolledSnapshots: EnrolledScheme[] = customer.enrolledSchemes || [];
+  // If customer has enrolled snapshots, use them directly as their immutable contracts
+  // Fallback to customer's active scheme if snapshots are empty but customer.schemeId exists
+  const availedList: EnrolledScheme[] = enrolledSnapshots.length > 0
+    ? enrolledSnapshots
+    : (customer.schemeId && customer.schemeId.trim() !== ''
+        ? [{
+            schemeId: customer.schemeId,
+            schemeName: schemes.find((s) => s.id === customer.schemeId)?.name || 'Bronze 3-Day 50K',
+            totalAmount: customer.amountGiven || 50000,
+            interestAmount: 4000,
+            payoutAmount: 46000,
+            collectionAmount: customer.collectionAmount || 1000,
+            frequency: customer.frequency || 'every_3_days',
+            durationWeeksOrMonths: 50,
+            enrolledAt: customer.startDate || new Date().toISOString(),
+          }]
+        : []);
+
+  // An admin scheme is available/unavailed if its exact terms (totalAmount, interestAmount, payoutAmount)
+  // are not already in availedList
+  const otherAvailableSchemes = schemes.filter((s) => {
+    const sInterest = s.interestAmount || 0;
+    const sPayout = s.payoutAmount || Math.max(0, s.totalAmount - sInterest);
+    const alreadyAvailed = availedList.some(
+      (item) =>
+        item.schemeId === s.id &&
+        item.totalAmount === s.totalAmount &&
+        item.interestAmount === sInterest &&
+        item.payoutAmount === sPayout
+    );
+    return !alreadyAvailed;
+  });
   const isCustProfileComplete = isCustomerProfileComplete(customer.id);
 
+  const [confirmScheme, setConfirmScheme] = useState<Scheme | null>(null);
+  const [isAvailing, setIsAvailing] = useState<boolean>(false);
+  const [availSuccessScheme, setAvailSuccessScheme] = useState<Scheme | null>(null);
+
   const handleAvailScheme = (schemeToAvail: Scheme) => {
-    // 1. Mandatory Admin Profile Setup Check
-    if (!isAdminProfileComplete) {
-      Alert.alert(
-        'Schemes Unavailable 🔒',
-        'The chit fund organizer has not completed their profile setup yet. Schemes cannot be availed until the organizer sets up their profile.'
-      );
-      return;
-    }
-
-    // 2. Mandatory Customer Profile Setup Check
-    if (!isCustProfileComplete) {
-      Alert.alert(
-        'Profile Setup Required 📝',
-        'You must complete your profile details (including your Email and Residential Address) before you can avail any chit scheme.\n\nTap "Complete Profile" to update your details now.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Complete Profile', onPress: () => navigation.navigate('Profile') },
-        ]
-      );
-      return;
-    }
-
-    const interest = schemeToAvail.interestAmount || 0;
-    const payout = schemeToAvail.payoutAmount || (schemeToAvail.totalAmount - interest);
-
-    Alert.alert(
-      'Avail Chit Scheme',
-      `Would you like to avail "${schemeToAvail.name}"?\n\n• Total Scheme Value: ₹${schemeToAvail.totalAmount.toLocaleString('en-IN')}\n• Upfront Net Payout: ₹${payout.toLocaleString('en-IN')}\n• Installment: ₹${schemeToAvail.collectionAmount.toLocaleString('en-IN')} (${formatFrequency(schemeToAvail.frequency)})\n• Duration: ${schemeToAvail.durationWeeksOrMonths} collections`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm & Avail',
-          onPress: async () => {
-            const res = await updateCustomerScheme(customer.id, schemeToAvail.id);
-            if (res.success) {
-              Alert.alert(
-                'Scheme Availed! 🎉',
-                `You have successfully availed "${schemeToAvail.name}". It is now listed under your availed schemes.`
-              );
-            } else {
-              Alert.alert('Error', res.error || 'Failed to avail scheme');
-            }
-          },
-        },
-      ]
-    );
+    setConfirmScheme(schemeToAvail);
   };
 
-  const handleSetPrimary = async (schemeToSet: Scheme) => {
-    const res = await updateCustomerScheme(customer.id, schemeToSet.id);
+  const handleConfirmAvail = async (selectedScheme: Scheme) => {
+    setIsAvailing(true);
+    try {
+      const res = await updateCustomerScheme(customer.id, selectedScheme.id);
+      if (res.success) {
+        setAvailSuccessScheme(selectedScheme);
+      } else {
+        Alert.alert('Unable to Avail Scheme', res.error || 'Failed to avail scheme. Please try again.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'An unexpected error occurred.');
+    } finally {
+      setIsAvailing(false);
+    }
+  };
+
+  const handleSuccessDone = () => {
+    setConfirmScheme(null);
+    setAvailSuccessScheme(null);
+  };
+
+  const handleSetPrimary = async (item: EnrolledScheme | Scheme) => {
+    const schemeId = 'schemeId' in item ? item.schemeId : item.id;
+    const res = await updateCustomerScheme(customer.id, schemeId);
     if (res.success) {
-      Alert.alert('Active Scheme Updated', `"${schemeToSet.name}" is now set as your active primary scheme.`);
+      const name = 'schemeName' in item ? item.schemeName : item.name;
+      Alert.alert('Active Scheme Updated', `"${name}" is now set as your active primary scheme.`);
     }
   };
 
@@ -134,11 +145,11 @@ export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
         <View style={styles.sectionHeaderBox}>
           <Text style={styles.sectionTitle}>Schemes Availed by Me</Text>
           <Text style={styles.sectionSubtitle}>
-            {availedSchemes.length} {availedSchemes.length === 1 ? 'scheme' : 'schemes'} currently enrolled under admin
+            {availedList.length} {availedList.length === 1 ? 'scheme' : 'schemes'} currently enrolled under admin
           </Text>
         </View>
 
-        {availedSchemes.length === 0 ? (
+        {availedList.length === 0 ? (
           <Card style={styles.emptyCard}>
             <View style={styles.emptyIconBox}>
               <Text style={styles.emptyIcon}>🪙</Text>
@@ -160,25 +171,22 @@ export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
             )}
           </Card>
         ) : (
-          availedSchemes.map((s) => {
-            const isPrimary = s.id === customer.schemeId;
-            const snapshot = customer.enrolledSchemes?.find((es) => es.schemeId === s.id);
-
-            // Customer's locked-in terms when enrolled (lasts forever)
-            const totalVal = snapshot?.totalAmount ?? (isPrimary ? customer.amountGiven : s.totalAmount);
-            const colVal = snapshot?.collectionAmount ?? (isPrimary ? customer.collectionAmount : s.collectionAmount);
-            const freqVal = snapshot?.frequency ?? (isPrimary ? customer.frequency : s.frequency);
-            const interest = snapshot?.interestAmount ?? s.interestAmount ?? 0;
+          availedList.map((item) => {
+            const isPrimary = item.schemeId === customer.schemeId;
+            const totalVal = item.totalAmount;
+            const colVal = item.collectionAmount;
+            const freqVal = item.frequency;
+            const interest = item.interestAmount;
             const interestRate = totalVal > 0 ? ((interest / totalVal) * 100).toFixed(1) : '0';
-            const payout = snapshot?.payoutAmount ?? s.payoutAmount ?? Math.max(0, totalVal - interest);
+            const payout = item.payoutAmount;
 
             return (
-              <Card key={s.id} style={[styles.availedCard, isPrimary && styles.primaryAvailedCard]}>
+              <Card key={`${item.schemeId}-${item.enrolledAt}`} style={[styles.availedCard, isPrimary && styles.primaryAvailedCard]}>
                 <View style={styles.cardHeaderRow}>
                   <View style={{ flex: 1, marginRight: SPACING.sm }}>
-                    <Text style={styles.schemeTitle}>{snapshot?.schemeName || s.name}</Text>
+                    <Text style={styles.schemeTitle}>{item.schemeName}</Text>
                     <Text style={styles.schemeTag}>
-                      ₹{colVal.toLocaleString('en-IN')} · {formatFrequency(freqVal)} ({snapshot?.durationWeeksOrMonths || s.durationWeeksOrMonths} collections)
+                      ₹{colVal.toLocaleString('en-IN')} · {formatFrequency(freqVal)} ({item.durationWeeksOrMonths} collections)
                     </Text>
                   </View>
 
@@ -190,7 +198,7 @@ export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                     ) : (
                       <TouchableOpacity
                         style={styles.setPrimaryBtn}
-                        onPress={() => handleSetPrimary(s)}
+                        onPress={() => handleSetPrimary(item)}
                         activeOpacity={0.8}
                       >
                         <Text style={styles.setPrimaryBtnText}>Set as Active</Text>
@@ -247,116 +255,74 @@ export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
         <View style={styles.sectionHeaderBox}>
           <Text style={styles.sectionTitle}>Available Admin Schemes</Text>
           <Text style={styles.sectionSubtitle}>
-            {isAdminProfileComplete
-              ? `All schemes listed by the admin (${schemes.length} total schemes available)`
-              : 'Schemes visibility locked until organizer completes profile setup'}
+            All schemes listed by the admin ({schemes.length} total schemes available)
           </Text>
         </View>
 
-        {!isAdminProfileComplete ? (
-          <Card style={styles.lockedCard}>
-            <View style={styles.lockedIconBox}>
-              <Text style={styles.lockedIcon}>🔒</Text>
+        {/* Organizer details overview banner */}
+        <View style={styles.organizerCard}>
+          <View style={styles.organizerRow}>
+            <View style={styles.organizerAvatar}>
+              <Text style={styles.organizerAvatarText}>
+                {currentAdmin?.name ? currentAdmin.name[0].toUpperCase() : '🏢'}
+              </Text>
             </View>
-            <Text style={styles.lockedTitle}>Chit Schemes Unavailable</Text>
-            <Text style={styles.lockedText}>
-              The chit fund organizer has not completed their mandatory profile setup yet.
-              {'\n\n'}
-              As per platform policy, schemes and enrollment options will become visible to members once the administrator completes their verified organizer profile (Name, Phone, Email, Office Address).
-            </Text>
-            <View style={styles.lockedBadge}>
-              <Text style={styles.lockedBadgeText}>Organizer Setup Pending</Text>
+            <View style={{ flex: 1, marginLeft: SPACING.sm }}>
+              <Text style={styles.organizerTitle}>
+                Organized by {currentAdmin?.name || 'Administrator'}
+              </Text>
+              <Text style={styles.organizerFirm}>
+                {currentAdmin?.businessName || 'Verified Chit Fund Agency'}
+              </Text>
+              <Text style={styles.organizerContact}>
+                📞 +91 {currentAdmin?.phone || 'N/A'} · ✉️ {currentAdmin?.email || 'N/A'}
+              </Text>
+              {currentAdmin?.address && (
+                <Text style={styles.organizerAddress}>
+                  📍 {currentAdmin.address}{currentAdmin.city ? `, ${currentAdmin.city}` : ''}
+                </Text>
+              )}
             </View>
+          </View>
+        </View>
+
+        {otherAvailableSchemes.length === 0 ? (
+          <Card style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>✓ All Schemes Enrolled</Text>
+            <Text style={styles.emptyText}>You have currently availed all available schemes listed by the admin.</Text>
           </Card>
         ) : (
-          <>
-            {/* Organizer details overview banner */}
-            <View style={styles.organizerCard}>
-              <View style={styles.organizerRow}>
-                <View style={styles.organizerAvatar}>
-                  <Text style={styles.organizerAvatarText}>
-                    {currentAdmin?.name ? currentAdmin.name[0].toUpperCase() : '🏢'}
-                  </Text>
-                </View>
-                <View style={{ flex: 1, marginLeft: SPACING.sm }}>
-                  <Text style={styles.organizerTitle}>
-                    Organized by {currentAdmin?.name || 'Administrator'}
-                  </Text>
-                  <Text style={styles.organizerFirm}>
-                    {currentAdmin?.businessName || 'Verified Chit Fund Agency'}
-                  </Text>
-                  <Text style={styles.organizerContact}>
-                    📞 +91 {currentAdmin?.phone || 'N/A'} · ✉️ {currentAdmin?.email || 'N/A'}
-                  </Text>
-                  {currentAdmin?.address && (
-                    <Text style={styles.organizerAddress}>
-                      📍 {currentAdmin.address}{currentAdmin.city ? `, ${currentAdmin.city}` : ''}
+          otherAvailableSchemes.map((s) => {
+            const interest = s.interestAmount || 0;
+            const interestRate = ((interest / s.totalAmount) * 100).toFixed(1);
+            const payout = s.payoutAmount || Math.max(0, s.totalAmount - interest);
+
+            return (
+              <Card key={s.id} style={styles.exploreCard}>
+                <View style={styles.cardHeaderRow}>
+                  <View style={{ flex: 1, marginRight: SPACING.sm }}>
+                    <Text style={styles.schemeTitle}>{s.name}</Text>
+                    <Text style={styles.schemeTag}>
+                      ₹{s.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(s.frequency)} ({s.durationWeeksOrMonths} collections)
                     </Text>
-                  )}
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.availBtn}
+                    onPress={() => handleAvailScheme(s)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.availBtnText}>Avail Scheme →</Text>
+                  </TouchableOpacity>
                 </View>
-              </View>
-            </View>
 
-            {/* Customer profile incomplete warning banner */}
-            {!isCustProfileComplete && (
-              <TouchableOpacity
-                style={styles.customerIncompleteBanner}
-                onPress={() => navigation.navigate('Profile')}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.customerIncompleteIcon}>⚠️</Text>
-                <View style={{ flex: 1, marginLeft: SPACING.sm }}>
-                  <Text style={styles.customerIncompleteTitle}>Profile Setup Required to Avail</Text>
-                  <Text style={styles.customerIncompleteText}>
-                    You must complete your profile details (Email and Residential Address) in the Profile tab before you can avail any scheme.
-                  </Text>
-                </View>
-                <Text style={styles.customerIncompleteAction}>Setup →</Text>
-              </TouchableOpacity>
-            )}
+                <View style={styles.divider} />
 
-            {otherAvailableSchemes.length === 0 ? (
-              <Card style={styles.emptyCard}>
-                <Text style={styles.emptyTitle}>✓ All Schemes Enrolled</Text>
-                <Text style={styles.emptyText}>You have currently availed all available schemes listed by the admin.</Text>
-              </Card>
-            ) : (
-              otherAvailableSchemes.map((s) => {
-                const interest = s.interestAmount || 0;
-                const interestRate = ((interest / s.totalAmount) * 100).toFixed(1);
-                const payout = s.payoutAmount || Math.max(0, s.totalAmount - interest);
-
-                return (
-                  <Card key={s.id} style={styles.exploreCard}>
-                    <View style={styles.cardHeaderRow}>
-                      <View style={{ flex: 1, marginRight: SPACING.sm }}>
-                        <Text style={styles.schemeTitle}>{s.name}</Text>
-                        <Text style={styles.schemeTag}>
-                          ₹{s.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(s.frequency)} ({s.durationWeeksOrMonths} collections)
-                        </Text>
-                      </View>
-
-                      <TouchableOpacity
-                        style={[
-                          styles.availBtn,
-                          !isCustProfileComplete && styles.availBtnDisabled,
-                        ]}
-                        onPress={() => handleAvailScheme(s)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={styles.availBtnText}>
-                          {isCustProfileComplete ? 'Avail Scheme →' : 'Complete Profile'}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.divider} />
-
-                    <View style={styles.financialGrid}>
-                      <View style={styles.finCol}>
-                        <Text style={styles.finLabel}>TOTAL VALUE</Text>
-                        <Text style={styles.finValue}>₹{s.totalAmount.toLocaleString('en-IN')}</Text>
-                      </View>
+                <View style={styles.financialGrid}>
+                  <View style={styles.finCol}>
+                    <Text style={styles.finLabel}>TOTAL VALUE</Text>
+                    <Text style={styles.finValue}>₹{s.totalAmount.toLocaleString('en-IN')}</Text>
+                  </View>
 
                       <View style={styles.finCol}>
                         <Text style={styles.finLabel}>INTEREST ({interestRate}%)</Text>
@@ -369,16 +335,30 @@ export const MySchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                       </View>
                     </View>
 
-                    {s.description ? (
-                      <Text style={styles.schemeDesc}>{s.description}</Text>
-                    ) : null}
+                    <Text style={styles.schemeDesc}>
+                      {`Total Chit Value is ₹${s.totalAmount.toLocaleString('en-IN')}. An upfront interest of ₹${interest.toLocaleString('en-IN')} is deducted, giving the customer a net payout of ₹${payout.toLocaleString('en-IN')}. The customer repays ₹${s.totalAmount.toLocaleString('en-IN')} across ${s.durationWeeksOrMonths} installments of ₹${s.collectionAmount.toLocaleString('en-IN')} (${formatFrequency(s.frequency)}).`}
+                    </Text>
                   </Card>
                 );
               })
             )}
-          </>
-        )}
       </ScrollView>
+
+      {/* Interactive Scheme Avail Confirmation & Success Modal */}
+      <AvailSchemeModal
+        visible={Boolean(confirmScheme)}
+        scheme={confirmScheme}
+        onClose={() => {
+          if (!isAvailing) {
+            setConfirmScheme(null);
+            setAvailSuccessScheme(null);
+          }
+        }}
+        onConfirm={handleConfirmAvail}
+        isLoading={isAvailing}
+        successScheme={availSuccessScheme}
+        onSuccessDone={handleSuccessDone}
+      />
     </SafeAreaView>
   );
 };

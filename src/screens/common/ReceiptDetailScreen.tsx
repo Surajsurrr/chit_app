@@ -23,9 +23,11 @@ export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
   route,
   navigation,
 }) => {
-  const { receiptId, autoDownload, isNewPayment } = route.params;
-  const { receipts, customers, schemes } = useChitData();
+  const { receiptId, autoDownload, isNewPayment } = route.params || {};
+  const { receipts, customers, schemes, currentRole, currentUserRole } = useChitData();
   const [isDownloading, setIsDownloading] = useState(false);
+
+  const isAdmin = currentRole === 'admin' || currentUserRole === 'admin';
 
   const receipt = receipts.find((r) => r.id === receiptId);
 
@@ -44,6 +46,7 @@ export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
   );
 
   const handleDownload = async () => {
+    if (isAdmin) return; // Print/download is strictly for customers alone
     setIsDownloading(true);
     try {
       await downloadReceiptPdf(receipt, customer, scheme);
@@ -54,15 +57,15 @@ export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
     }
   };
 
-  // Automatically trigger download/save prompt if opened right after recording payment
+  // Automatically trigger download/save prompt ONLY if opened by a customer
   useEffect(() => {
-    if (autoDownload) {
+    if (autoDownload && !isAdmin) {
       const timer = setTimeout(() => {
         handleDownload();
       }, 700);
       return () => clearTimeout(timer);
     }
-  }, [autoDownload]);
+  }, [autoDownload, isAdmin]);
 
   const handleSendProof = () => {
     if (!customer) {
@@ -205,25 +208,37 @@ export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
 
         {/* Action Buttons */}
         <View style={styles.actionsBox}>
-          {/* Download PDF Invoice Button */}
-          <TouchableOpacity
-            style={[styles.downloadBtn, isDownloading && styles.downloadBtnDisabled]}
-            onPress={handleDownload}
-            disabled={isDownloading}
-            activeOpacity={0.85}
-          >
-            {isDownloading ? (
-              <View style={styles.btnRow}>
-                <ActivityIndicator color={COLORS.white} size="small" />
-                <Text style={styles.downloadBtnText}>Generating Invoice PDF...</Text>
+          {/* Download / Print PDF Invoice Button — strictly for customers alone */}
+          {!isAdmin ? (
+            <TouchableOpacity
+              style={[styles.downloadBtn, isDownloading && styles.downloadBtnDisabled]}
+              onPress={handleDownload}
+              disabled={isDownloading}
+              activeOpacity={0.85}
+            >
+              {isDownloading ? (
+                <View style={styles.btnRow}>
+                  <ActivityIndicator color={COLORS.white} size="small" />
+                  <Text style={styles.downloadBtnText}>Generating Invoice PDF...</Text>
+                </View>
+              ) : (
+                <View style={styles.btnRow}>
+                  <Text style={styles.btnIcon}>📥</Text>
+                  <Text style={styles.downloadBtnText}>Download Invoice (PDF)</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.adminReceiptNoticeCard}>
+              <Text style={styles.adminReceiptNoticeIcon}>ℹ️</Text>
+              <View style={{ flex: 1, marginLeft: SPACING.sm }}>
+                <Text style={styles.adminReceiptNoticeTitle}>Customer Invoice Issued</Text>
+                <Text style={styles.adminReceiptNoticeText}>
+                  Invoice printing is for customers alone. The customer can access and print their verified receipt from the Receipts tab in their Customer Dashboard.
+                </Text>
               </View>
-            ) : (
-              <View style={styles.btnRow}>
-                <Text style={styles.btnIcon}>📥</Text>
-                <Text style={styles.downloadBtnText}>Download Invoice (PDF)</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+            </View>
+          )}
 
           {/* Send Proof to Customer Button */}
           <TouchableOpacity
@@ -237,7 +252,7 @@ export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
 
           {/* Done / Close Button */}
           <Button
-            title="Done / Back to Dashboard"
+            title="Done / Back"
             onPress={() => navigation.goBack()}
             style={styles.doneBtn}
             variant="outline"
@@ -404,6 +419,32 @@ const styles = StyleSheet.create({
     width: '100%',
     marginTop: SPACING.lg,
     gap: SPACING.sm,
+  },
+  adminReceiptNoticeCard: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 14,
+    padding: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+  },
+  adminReceiptNoticeIcon: {
+    fontSize: 22,
+    marginRight: SPACING.sm,
+  },
+  adminReceiptNoticeTitle: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#334155',
+    fontSize: 12,
+  },
+  adminReceiptNoticeText: {
+    ...TYPOGRAPHY.caption,
+    color: '#64748B',
+    marginTop: 2,
+    fontSize: 11,
+    lineHeight: 15,
   },
   downloadBtn: {
     backgroundColor: COLORS.success,
