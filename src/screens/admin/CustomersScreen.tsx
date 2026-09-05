@@ -21,7 +21,7 @@ import { formatFrequency, formatDateShort, getPaymentStatusInfo } from '../../ut
 import { StatusBar } from 'expo-status-bar';
 
 export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { customers, schemes, getCustomerStats, recordPayment, logout } = useChitData();
+  const { customers, schemes, getCustomerStats, recordPayment, selectCustomer, logout } = useChitData();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'ALL' | 'ACTIVE' | 'SETTLED'>('ALL');
 
@@ -91,24 +91,16 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     const result = recordPayment(selectedCust.id, amount, paymentMethod);
     if (result.success && result.receipt) {
       const receiptId = result.receipt.id;
-      const custName = selectedCust.name;
+      selectCustomer(selectedCust.id);
       setIsCollectModalVisible(false);
       setSelectedCust(null);
 
-      Alert.alert(
-        'Collection Recorded! 🎉',
-        `Successfully collected ₹${amount.toLocaleString('en-IN')} from ${custName}. Overdue status has been cleared and receipt generated.`,
-        [
-          {
-            text: 'View Receipt',
-            onPress: () => navigation.navigate('ReceiptDetail', { receiptId }),
-          },
-          {
-            text: 'Done',
-            style: 'cancel',
-          },
-        ]
-      );
+      // Automatically show the downloadable invoice proof
+      navigation.navigate('ReceiptDetail', {
+        receiptId,
+        autoDownload: true,
+        isNewPayment: true,
+      });
     } else {
       setCollectError(result.error || 'Failed to record collection');
     }

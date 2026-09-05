@@ -24,7 +24,7 @@ import { getPaymentStatusInfo, formatFrequency, PaymentStatusInfo } from '../../
 import { StatusBar } from 'expo-status-bar';
 
 export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ route, navigation }) => {
-  const { customers, schemes, getCustomerStats, recordPayment, logout } = useChitData();
+  const { customers, schemes, getCustomerStats, recordPayment, selectCustomer, logout } = useChitData();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OVERDUE' | 'DUE_TODAY' | 'PAID'>('ALL');
   
@@ -104,9 +104,14 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
     const result = recordPayment(selectedCustId, amount, paymentMethod);
     
     if (result.success && result.receipt) {
+      selectCustomer(selectedCustId);
       setIsModalVisible(false);
-      // Navigate to the newly generated receipt
-      navigation.navigate('ReceiptDetail', { receiptId: result.receipt.id });
+      // Automatically show the downloadable invoice proof
+      navigation.navigate('ReceiptDetail', {
+        receiptId: result.receipt.id,
+        autoDownload: true,
+        isNewPayment: true,
+      });
     } else {
       setFormError(result.error || 'Failed to record collection');
     }

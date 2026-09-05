@@ -124,12 +124,12 @@ export const generateReceiptHtml = (
     }
     .receipt-badge {
       background-color: rgba(16, 185, 129, 0.15);
-      border: 1px solid #10B981;
+      border: 1.5px solid #10B981;
       color: #10B981;
-      padding: 6px 14px;
+      padding: 8px 16px;
       border-radius: 20px;
       font-size: 11px;
-      font-weight: 700;
+      font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 1px;
       text-align: right;
@@ -841,3 +841,23 @@ export const downloadAllReceiptsPdf = async (
     return { success: false, error: error?.message };
   }
 };
+
+/**
+ * Formats an official payment verification text message with invoice proof details
+ * for direct dispatch to the customer via WhatsApp or SMS
+ */
+export const formatPaymentProofMessage = (
+  receipt: Receipt,
+  customer?: Customer,
+  scheme?: Scheme
+): string => {
+  const custName = customer?.name || receipt.customerName;
+  const amountStr = `₹${receipt.amount.toLocaleString('en-IN')}`;
+  const balanceStr = `₹${receipt.remainingBalance.toLocaleString('en-IN')}`;
+  const nextDueDate = customer?.nextPaymentDate
+    ? formatDateShort(customer.nextPaymentDate)
+    : 'As scheduled';
+
+  return `*CHITFLOW OFFICIAL PAYMENT INVOICE PROOF* 📄\n\nDear ${custName},\n\nYour payment has been successfully received & credited:\n\n• *Invoice / Receipt No:* ${receipt.receiptNumber}\n• *Date:* ${formatDateShort(receipt.date)}\n• *Amount Received:* ${amountStr}\n• *Payment Mode:* ${receipt.method}\n• *Scheme Name:* ${receipt.schemeName}\n• *Remaining Balance:* ${balanceStr}\n• *Next Installment Due:* ${nextDueDate}\n• *Ref ID:* ${receipt.referenceId}\n\n✓ Status: VERIFIED & CREDITED\nYou can view and download your official PDF invoice proof directly in your ChitFlow Member Portal.\n\nThank you,\n*ChitFlow Financial Enterprises*`;
+};
+

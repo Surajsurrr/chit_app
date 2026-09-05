@@ -99,7 +99,9 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
             <Text style={styles.headerTitle}>{customer.name}</Text>
             <StatusBadge status={statusInfo.badgeLabel} />
           </View>
-          <Text style={styles.headerSubtitle}>+91 {customer.phone}</Text>
+          <Text style={styles.headerSubtitle}>
+            +91 {customer.phone} {customer.email ? ` · ✉️ ${customer.email}` : ''}
+          </Text>
         </View>
       </View>
 
@@ -214,6 +216,97 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
           >
             <Text style={styles.detailMessageBtnText}>💬 Send Payment Reminder Message</Text>
           </TouchableOpacity>
+        </Card>
+
+        {/* Customer Profile & Contact Details Card */}
+        <Text style={styles.sectionTitle}>Customer Profile & Contact Info</Text>
+        <Card style={styles.infoCard}>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Full Name</Text>
+            <Text style={styles.infoValue}>{customer.name}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Contact Mobile</Text>
+            <View style={styles.contactActionRow}>
+              <Text style={styles.infoValue}>+91 {customer.phone}</Text>
+              <TouchableOpacity
+                style={styles.inlineActionBtn}
+                onPress={() => Linking.openURL(`tel:${customer.phone}`)}
+              >
+                <Text style={styles.inlineActionText}>📞 Call</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Email Address</Text>
+            <View style={styles.contactActionRow}>
+              <Text style={[styles.infoValue, !customer.email && styles.placeholderValue]}>
+                {customer.email || 'Not provided'}
+              </Text>
+              {customer.email ? (
+                <TouchableOpacity
+                  style={styles.inlineActionBtn}
+                  onPress={() => Linking.openURL(`mailto:${customer.email}`)}
+                >
+                  <Text style={styles.inlineActionText}>✉️ Mail</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Residential Address</Text>
+            <Text
+              style={[
+                styles.infoValue,
+                !customer.address && styles.placeholderValue,
+                { maxWidth: '60%', textAlign: 'right' },
+              ]}
+            >
+              {customer.address || 'Not provided'}
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>City & Region</Text>
+            <Text style={[styles.infoValue, !customer.city && styles.placeholderValue]}>
+              {customer.city || 'Not provided'}
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Pincode</Text>
+            <Text style={[styles.infoValue, !customer.pincode && styles.placeholderValue]}>
+              {customer.pincode || 'Not provided'}
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Occupation</Text>
+            <Text style={[styles.infoValue, !customer.occupation && styles.placeholderValue]}>
+              {customer.occupation || 'Not provided'}
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Government ID Proof</Text>
+            <Text style={[styles.infoValue, !customer.idProofNumber && styles.placeholderValue]}>
+              {customer.idProofType || 'Aadhaar'}: {customer.idProofNumber || 'Not submitted'}
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Nominee Name</Text>
+            <Text style={[styles.infoValue, !customer.nomineeName && styles.placeholderValue]}>
+              {customer.nomineeName || 'Not provided'}
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Nominee Relationship</Text>
+            <Text style={[styles.infoValue, !customer.nomineeRelation && styles.placeholderValue]}>
+              {customer.nomineeRelation || 'Not provided'}
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Member Account ID</Text>
+            <Text style={[styles.infoValue, { fontFamily: 'monospace', color: COLORS.secondary }]}>
+              {customer.id.toUpperCase()}
+            </Text>
+          </View>
         </Card>
 
         {/* Payment History */}
@@ -498,6 +591,29 @@ const styles = StyleSheet.create({
   backBtnText: {
     ...TYPOGRAPHY.bodyMediumBold,
     color: COLORS.white,
+  },
+  contactActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs + 2,
+  },
+  inlineActionBtn: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  inlineActionText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#2563EB',
+    fontSize: 10,
+  },
+  placeholderValue: {
+    color: COLORS.textLight,
+    fontStyle: 'italic',
+    fontWeight: 'normal',
   },
 });
 

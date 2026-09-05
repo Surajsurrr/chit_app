@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,20 +8,22 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Platform,
+  Linking,
 } from 'react-native';
 import { useChitData } from '../../context/ChitDataContext';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
 import { formatDateLong } from '../../utils/dateHelpers';
-import { downloadReceiptPdf } from '../../utils/receiptGenerator';
+import { downloadReceiptPdf, formatPaymentProofMessage } from '../../utils/receiptGenerator';
 import { StatusBar } from 'expo-status-bar';
 
 export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
   route,
   navigation,
 }) => {
-  const { receiptId } = route.params;
+  const { receiptId, autoDownload, isNewPayment } = route.params;
   const { receipts, customers, schemes } = useChitData();
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -44,60 +46,132 @@ export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
   const handleDownload = async () => {
     setIsDownloading(true);
     try {
-      const res = await downloadReceiptPdf(receipt, customer, scheme);
-      if (res.success) {
-        // Success feedback handled in downloadReceiptPdf
-      }
+      await downloadReceiptPdf(receipt, customer, scheme);
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Could not download receipt');
+      Alert.alert('Error', e?.message || 'Could not download invoice');
     } finally {
       setIsDownloading(false);
     }
+  };
+
+  // Automatically trigger download/save prompt if opened right after recording payment
+  useEffect(() => {
+    if (autoDownload) {
+      const timer = setTimeout(() => {
+        handleDownload();
+      }, 700);
+      return () => clearTimeout(timer);
+    }
+  }, [autoDownload]);
+
+  const handleSendProof = () => {
+    if (!customer) {
+      Alert.alert('Customer Not Found', 'No phone details available for this receipt.');
+      return;
+    }
+
+    const cleanPhone = customer.phone.replace(/[^0-9]/g, '');
+    const proofText = formatPaymentProofMessage(receipt, customer, scheme);
+
+    Alert.alert(
+      'Send Payment Proof to Customer',
+      `Deliver verified invoice proof to ${customer.name} (+91 ${customer.phone})?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: '💬 WhatsApp',
+          onPress: async () => {
+            const waPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+            const url = `https://wa.me/${waPhone}?text=${encodeURIComponent(proofText)}`;
+            try {
+              await Linking.openURL(url);
+            } catch {
+              Alert.alert('Error', 'Could not open WhatsApp.');
+            }
+          },
+        },
+        {
+          text: '📱 SMS',
+          onPress: async () => {
+            const url =
+              Platform.OS === 'ios'
+                ? `sms:${cleanPhone}&body=${encodeURIComponent(proofText)}`
+                : `sms:${cleanPhone}?body=${encodeURIComponent(proofText)}`;
+            try {
+              await Linking.openURL(url);
+            } catch {
+              Alert.alert('Error', 'Could not open SMS application.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* If this was just recorded by admin, show prompt banner */}
+        {isNewPayment && (
+          <View style={styles.newPaymentBanner}>
+            <Text style={styles.newPaymentIcon}>🎉</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.newPaymentTitle}>Payment Recorded & Credited!</Text>
+              <Text style={styles.newPaymentDesc}>
+                Customer balance updated. Official invoice proof is generated below.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Digital Ticket / Invoice Card */}
         <Card style={styles.receiptCard}>
-          {/* Ticket Header cut-out indicator */}
+          {/* Header Banner */}
           <View style={styles.successBanner}>
             <View style={styles.successIconOuter}>
               <View style={styles.successIconInner} />
             </View>
-            <Text style={styles.successTitle}>Payment Verified</Text>
+            <Text style={styles.invoiceTitle}>TAX INVOICE & PAYMENT PROOF</Text>
             <Text style={styles.heroAmount}>₹{receipt.amount.toLocaleString('en-IN')}</Text>
             <View style={styles.badgeRow}>
               <Text style={styles.receiptNumBadge}>{receipt.receiptNumber}</Text>
             </View>
           </View>
 
-          {/* Receipt details */}
+          {/* Invoice details table */}
           <View style={styles.detailsContainer}>
             <View style={styles.row}>
-              <Text style={styles.label}>Receipt Number</Text>
+              <Text style={styles.label}>Invoice / Receipt No</Text>
               <Text style={[styles.value, styles.monoValue]}>{receipt.receiptNumber}</Text>
             </View>
 
             <View style={styles.row}>
-              <Text style={styles.label}>Reference ID</Text>
+              <Text style={styles.label}>Transaction Reference</Text>
               <Text style={[styles.value, styles.monoValue]}>{receipt.referenceId}</Text>
             </View>
 
             <View style={styles.divider} />
 
             <View style={styles.row}>
-              <Text style={styles.label}>Customer Name</Text>
+              <Text style={styles.label}>Customer / Member</Text>
               <Text style={styles.value}>{receipt.customerName}</Text>
             </View>
 
+            {customer?.phone ? (
+              <View style={styles.row}>
+                <Text style={styles.label}>Contact Phone</Text>
+                <Text style={styles.value}>+91 {customer.phone}</Text>
+              </View>
+            ) : null}
+
             <View style={styles.row}>
-              <Text style={styles.label}>Date & Time</Text>
+              <Text style={styles.label}>Payment Date & Time</Text>
               <Text style={styles.value}>{formatDateLong(receipt.date)}</Text>
             </View>
 
             <View style={styles.row}>
-              <Text style={styles.label}>Scheme Name</Text>
+              <Text style={styles.label}>Chit Scheme</Text>
               <Text style={styles.value}>{receipt.schemeName}</Text>
             </View>
 
@@ -106,17 +180,22 @@ export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
               <Text style={styles.value}>{receipt.method}</Text>
             </View>
 
+            <View style={styles.row}>
+              <Text style={styles.label}>Payment Verification</Text>
+              <Text style={[styles.value, { color: COLORS.success }]}>✓ Verified & Settled</Text>
+            </View>
+
             <View style={styles.divider} />
 
             <View style={styles.row}>
-              <Text style={styles.balanceLabel}>Remaining Balance</Text>
+              <Text style={styles.balanceLabel}>Remaining Chit Balance</Text>
               <Text style={styles.balanceValue}>
                 ₹{receipt.remainingBalance.toLocaleString('en-IN')}
               </Text>
             </View>
           </View>
 
-          {/* Ticket jagged edge simulator */}
+          {/* Ticket jagged edge */}
           <View style={styles.jaggedContainer}>
             {Array.from({ length: 15 }).map((_, i) => (
               <View key={i} style={styles.jaggedTooth} />
@@ -126,21 +205,39 @@ export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
 
         {/* Action Buttons */}
         <View style={styles.actionsBox}>
+          {/* Download PDF Invoice Button */}
           <TouchableOpacity
             style={[styles.downloadBtn, isDownloading && styles.downloadBtnDisabled]}
             onPress={handleDownload}
             disabled={isDownloading}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             {isDownloading ? (
-              <ActivityIndicator color={COLORS.white} size="small" />
+              <View style={styles.btnRow}>
+                <ActivityIndicator color={COLORS.white} size="small" />
+                <Text style={styles.downloadBtnText}>Generating Invoice PDF...</Text>
+              </View>
             ) : (
-              <Text style={styles.downloadBtnText}>📥 Download PDF Receipt</Text>
+              <View style={styles.btnRow}>
+                <Text style={styles.btnIcon}>📥</Text>
+                <Text style={styles.downloadBtnText}>Download Invoice (PDF)</Text>
+              </View>
             )}
           </TouchableOpacity>
 
+          {/* Send Proof to Customer Button */}
+          <TouchableOpacity
+            style={styles.shareProofBtn}
+            onPress={handleSendProof}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.btnIcon}>💬</Text>
+            <Text style={styles.shareProofBtnText}>Send Proof to Customer (WhatsApp / SMS)</Text>
+          </TouchableOpacity>
+
+          {/* Done / Close Button */}
           <Button
-            title="Done / Close"
+            title="Done / Back to Dashboard"
             onPress={() => navigation.goBack()}
             style={styles.doneBtn}
             variant="outline"
@@ -148,8 +245,8 @@ export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
         </View>
 
         <Text style={styles.shareText}>
-          Official digital receipt issued by ChitFlow Enterprises.
-          {'\n'}PDF download is compatible with mobile, tablet & desktop.
+          Official computerized payment invoice proof issued via ChitFlow Enterprises.
+          {'\n'}All records are permanently stored in the customer portal.
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -166,6 +263,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexGrow: 1,
     justifyContent: 'center',
+  },
+  newPaymentBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+    borderRadius: 14,
+    padding: SPACING.md,
+    marginBottom: SPACING.lg,
+    width: '100%',
+  },
+  newPaymentIcon: {
+    fontSize: 26,
+    marginRight: SPACING.sm,
+  },
+  newPaymentTitle: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#065F46',
+  },
+  newPaymentDesc: {
+    ...TYPOGRAPHY.caption,
+    color: '#047857',
+    marginTop: 2,
   },
   receiptCard: {
     width: '100%',
@@ -202,11 +323,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: COLORS.success,
   },
-  successTitle: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.success,
+  invoiceTitle: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#047857',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 1,
+    fontSize: 11,
   },
   heroAmount: {
     ...TYPOGRAPHY.amountLarge,
@@ -289,7 +411,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 2,
+    elevation: 3,
     shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
@@ -298,10 +420,34 @@ const styles = StyleSheet.create({
   downloadBtnDisabled: {
     opacity: 0.7,
   },
+  btnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnIcon: {
+    fontSize: 16,
+    marginRight: 6,
+  },
   downloadBtnText: {
     ...TYPOGRAPHY.bodyMediumBold,
     color: COLORS.white,
     fontSize: 15,
+  },
+  shareProofBtn: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1.5,
+    borderColor: '#93C5FD',
+    borderRadius: 12,
+    paddingVertical: SPACING.md - 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareProofBtnText: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#1D4ED8',
+    fontSize: 13,
   },
   doneBtn: {
     width: '100%',

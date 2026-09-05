@@ -12,6 +12,16 @@ export interface Customer {
   startDate: string;
   nextPaymentDate: string;
   enrolledSchemeIds?: string[];
+  // Extended Profile & KYC Details
+  email?: string;
+  address?: string;
+  city?: string;
+  pincode?: string;
+  occupation?: string;
+  nomineeName?: string;
+  nomineeRelation?: string;
+  idProofType?: 'Aadhaar' | 'PAN' | 'Voter ID' | 'Driving License';
+  idProofNumber?: string;
 }
 
 export interface Payment {
@@ -253,7 +263,16 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     frequency: 'every_3_days',
     startDate: '2026-05-15T00:00:00.000Z',
     // Last payment was Aug 25, 2026. Next would be Aug 28, 2026.
-    nextPaymentDate: '2026-08-28T10:00:00.000Z', 
+    nextPaymentDate: '2026-08-28T10:00:00.000Z',
+    email: 'ravi.kumar@gmail.com',
+    address: '42, North Mada Street, Mylapore',
+    city: 'Chennai',
+    pincode: '600004',
+    occupation: 'Retail Business Owner',
+    nomineeName: 'Sita Kumar',
+    nomineeRelation: 'Spouse',
+    idProofType: 'Aadhaar',
+    idProofNumber: 'XXXX-XXXX-4821',
   },
   {
     id: 'cust-2',
@@ -267,6 +286,15 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     startDate: '2026-08-05T00:00:00.000Z',
     // Last payment was Aug 30, 2026. Next is Aug 31, 2026.
     nextPaymentDate: '2026-08-31T11:30:00.000Z',
+    email: 'priya.s@outlook.com',
+    address: '15/B, 2nd Avenue, Anna Nagar',
+    city: 'Chennai',
+    pincode: '600040',
+    occupation: 'Software Engineer',
+    nomineeName: 'Suresh K',
+    nomineeRelation: 'Father',
+    idProofType: 'PAN',
+    idProofNumber: 'ABCPS1234F',
   },
   {
     id: 'cust-3',
@@ -280,5 +308,14 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     startDate: '2026-04-10T00:00:00.000Z',
     // Last payment was Aug 24, 2026. Next is Aug 31, 2026.
     nextPaymentDate: '2026-08-31T09:15:00.000Z',
+    email: 'anitha.r@gmail.com',
+    address: '78, Gandhi Road, T. Nagar',
+    city: 'Chennai',
+    pincode: '600017',
+    occupation: 'Healthcare Consultant',
+    nomineeName: 'Ramesh R',
+    nomineeRelation: 'Spouse',
+    idProofType: 'Aadhaar',
+    idProofNumber: 'XXXX-XXXX-9142',
   },
 ];

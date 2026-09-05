@@ -22,6 +22,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     selectedCustomerId,
     customers,
     payments,
+    receipts,
     schemes,
     getCustomerStats,
     updateCustomerScheme,
@@ -43,6 +44,10 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const stats = getCustomerStats(customer.id);
   const customerPayments = payments.filter((p) => p.customerId === customer.id);
   const recentPayments = customerPayments.slice(0, 3); // top 3
+  const latestPayment = customerPayments.length > 0 ? customerPayments[0] : null;
+  const latestReceipt = latestPayment
+    ? receipts.find((r) => r.paymentId === latestPayment.id || r.id === latestPayment.receiptId)
+    : null;
   const statusInfo = getPaymentStatusInfo(customer.nextPaymentDate, stats.remainingAmount, customer.frequency);
   const isOverdue = statusInfo.isOverdue;
 
@@ -100,8 +105,48 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Latest Payment Verified & Invoice Proof Card */}
+        {latestPayment && (
+          <Card style={styles.latestInvoiceCard}>
+            <View style={styles.latestInvoiceHeader}>
+              <View style={styles.latestInvoiceBadge}>
+                <Text style={styles.latestInvoiceBadgeText}>✓ LATEST PAYMENT CREDITED</Text>
+              </View>
+              <Text style={styles.latestInvoiceDate}>
+                {formatDateLong(latestPayment.date)}
+              </Text>
+            </View>
 
+            <View style={styles.latestInvoiceRow}>
+              <View style={styles.latestInvoiceInfo}>
+                <Text style={styles.latestInvoiceAmount}>
+                  ₹{latestPayment.amount.toLocaleString('en-IN')}
+                </Text>
+                <Text style={styles.latestInvoiceSub}>
+                  Paid via {latestPayment.method} · {latestReceipt ? latestReceipt.receiptNumber : 'Verified'}
+                </Text>
+              </View>
 
+              <TouchableOpacity
+                style={styles.latestInvoiceBtn}
+                onPress={() => {
+                  if (latestReceipt) {
+                    navigation.navigate('ReceiptDetail', {
+                      receiptId: latestReceipt.id,
+                      autoDownload: true,
+                    });
+                  } else {
+                    navigation.navigate('Receipts');
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.latestInvoiceBtnIcon}>📥</Text>
+                <Text style={styles.latestInvoiceBtnText}>Download Invoice (PDF)</Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+        )}
 
         {/* Next Payment Card (View Only with Dynamic Green/Red Shade) */}
         {stats.remainingAmount > 0 ? (
@@ -739,6 +784,82 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.bodyLarge,
     color: COLORS.danger,
     marginBottom: SPACING.lg,
+  },
+  // Latest Invoice Proof Card Styles
+  latestInvoiceCard: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1.5,
+    borderColor: '#34D399',
+    borderRadius: 14,
+    marginBottom: SPACING.lg,
+    padding: SPACING.md,
+  },
+  latestInvoiceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.xs + 2,
+  },
+  latestInvoiceBadge: {
+    backgroundColor: '#D1FAE5',
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#6EE7B7',
+  },
+  latestInvoiceBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#065F46',
+    fontSize: 10,
+    letterSpacing: 0.5,
+  },
+  latestInvoiceDate: {
+    ...TYPOGRAPHY.caption,
+    color: '#047857',
+    fontSize: 11,
+  },
+  latestInvoiceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  latestInvoiceInfo: {
+    flex: 1,
+    paddingRight: SPACING.sm,
+  },
+  latestInvoiceAmount: {
+    ...TYPOGRAPHY.amountMedium,
+    color: '#065F46',
+    fontWeight: '800',
+  },
+  latestInvoiceSub: {
+    ...TYPOGRAPHY.caption,
+    color: '#047857',
+    marginTop: 1,
+  },
+  latestInvoiceBtn: {
+    backgroundColor: '#10B981',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+    borderRadius: 10,
+    elevation: 2,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  latestInvoiceBtnIcon: {
+    fontSize: 14,
+    marginRight: 4,
+  },
+  latestInvoiceBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.white,
+    fontSize: 11,
   },
 });
 

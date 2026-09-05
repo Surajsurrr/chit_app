@@ -62,6 +62,10 @@ interface ChitDataContextType {
     customerId: string,
     schemeId: string
   ) => Promise<{ success: boolean; error?: string }>;
+  updateCustomerProfile: (
+    customerId: string,
+    updatedData: Partial<Customer>
+  ) => Promise<{ success: boolean; error?: string }>;
   recordPayment: (
     customerId: string,
     amount: number,
@@ -158,7 +162,21 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
 
         if (savedCustomers && savedPayments && savedSchemes && savedReceipts) {
-          const parsedCustomers: Customer[] = JSON.parse(savedCustomers);
+          const parsedCustomers: Customer[] = JSON.parse(savedCustomers).map((c: Customer) => {
+            const initial = INITIAL_CUSTOMERS.find((init) => init.id === c.id);
+            return {
+              ...c,
+              email: c.email || initial?.email,
+              address: c.address || initial?.address,
+              city: c.city || initial?.city,
+              pincode: c.pincode || initial?.pincode,
+              occupation: c.occupation || initial?.occupation,
+              nomineeName: c.nomineeName || initial?.nomineeName,
+              nomineeRelation: c.nomineeRelation || initial?.nomineeRelation,
+              idProofType: c.idProofType || initial?.idProofType,
+              idProofNumber: c.idProofNumber || initial?.idProofNumber,
+            };
+          });
           const parsedPayments: Payment[] = JSON.parse(savedPayments);
           const parsedReceipts: Receipt[] = JSON.parse(savedReceipts);
           const parsedSchemes: Scheme[] = JSON.parse(savedSchemes).map((s: Scheme) => {
@@ -365,6 +383,47 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
+  const updateCustomerProfile = async (
+    customerId: string,
+    updatedData: Partial<Customer>
+  ): Promise<{ success: boolean; error?: string }> => {
+    const customer = customers.find((c) => c.id === customerId);
+    if (!customer) {
+      return { success: false, error: 'Customer not found' };
+    }
+
+    const updatedCustomers = customers.map((c) => {
+      if (c.id === customerId) {
+        return { ...c, ...updatedData };
+      }
+      return c;
+    });
+
+    setCustomers(updatedCustomers);
+
+    // If customer name was changed, sync payments and receipts customerName
+    if (updatedData.name && updatedData.name !== customer.name) {
+      const updatedPayments = payments.map((p) =>
+        p.customerId === customerId ? { ...p, customerName: updatedData.name! } : p
+      );
+      const updatedReceipts = receipts.map((r) =>
+        r.customerId === customerId ? { ...r, customerName: updatedData.name! } : r
+      );
+      setPayments(updatedPayments);
+      setReceipts(updatedReceipts);
+      AsyncStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify(updatedPayments)).catch(console.error);
+      AsyncStorage.setItem(STORAGE_KEYS.RECEIPTS, JSON.stringify(updatedReceipts)).catch(console.error);
+    }
+
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(updatedCustomers));
+      return { success: true };
+    } catch (e: any) {
+      console.error('Failed to save updated customer profile', e);
+      return { success: false, error: e?.message || 'Failed to save profile' };
+    }
+  };
+
   const updateCustomerScheme = async (customerId: string, schemeId: string) => {
     const selectedScheme = schemes.find((s) => s.id === schemeId);
     if (!selectedScheme) {
@@ -493,11 +552,13 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setCustomers(updatedCustomers);
     setPayments(updatedPayments);
     setReceipts(updatedReceipts);
+    setSelectedCustomerIdState(customerId);
 
     // Save to local storage
     AsyncStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(updatedCustomers)).catch(console.error);
     AsyncStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify(updatedPayments)).catch(console.error);
     AsyncStorage.setItem(STORAGE_KEYS.RECEIPTS, JSON.stringify(updatedReceipts)).catch(console.error);
+    AsyncStorage.setItem(STORAGE_KEYS.SELECTED_CUST, customerId).catch(console.error);
 
     return { success: true, receipt: newReceipt };
   };
@@ -664,6 +725,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         addScheme,
         updateScheme,
         updateCustomerScheme,
+        updateCustomerProfile,
         recordPayment,
         resetData,
         loginAsAdmin,
