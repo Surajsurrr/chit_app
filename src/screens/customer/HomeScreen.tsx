@@ -119,6 +119,21 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     );
   };
 
+  const handleLogout = () => {
+    Alert.alert(
+      'Log Out',
+      'Are you sure you want to log out of your member account?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log Out',
+          style: 'destructive',
+          onPress: () => logout(),
+        },
+      ]
+    );
+  };
+
   const nameInitials = customer.name
     .split(' ')
     .map((n) => n[0])
@@ -131,16 +146,26 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
       {/* Header */}
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1, marginRight: SPACING.sm }}>
           <Text style={styles.welcomeText}>WELCOME BACK</Text>
-          <Text style={styles.customerName}>{customer.name}</Text>
+          <Text style={styles.customerName} numberOfLines={1}>{customer.name}</Text>
         </View>
-        <TouchableOpacity
-          style={styles.avatar}
-          onPress={() => navigation.navigate('Profile')}
-        >
-          <Text style={styles.avatarText}>{nameInitials}</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRightRow}>
+          <TouchableOpacity
+            style={styles.avatar}
+            onPress={() => navigation.navigate('Profile')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.avatarText}>{nameInitials}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.headerLogoutBtn}
+            onPress={handleLogout}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.headerLogoutText}>Log Out</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -505,6 +530,24 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.bodyLarge,
     color: COLORS.white,
     fontWeight: '700',
+  },
+  headerRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  headerLogoutBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(239, 68, 68, 0.18)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+  },
+  headerLogoutText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#FCA5A5',
+    fontSize: 12,
   },
   scrollContent: {
     padding: SPACING.lg,

@@ -168,6 +168,21 @@ export const ReceiptsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     }
   };
 
+  const handleLogout = () => {
+    Alert.alert(
+      'Log Out',
+      `Are you sure you want to log out of your ${isAdmin ? 'organizer' : 'member'} account?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log Out',
+          style: 'destructive',
+          onPress: () => logout(),
+        },
+      ]
+    );
+  };
+
   const renderReceiptItem = ({ item }: { item: Receipt }) => {
     const isDownloadingThis = downloadingId === item.id;
 
@@ -262,11 +277,9 @@ export const ReceiptsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           </Text>
         </View>
 
-        {isAdmin && (
-          <TouchableOpacity style={styles.logoutBtn} onPress={() => logout()}>
-            <Text style={styles.logoutBtnText}>Log Out</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
+          <Text style={styles.logoutBtnText}>Log Out</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.content}>
@@ -442,15 +455,18 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   logoutBtn: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'rgba(239, 68, 68, 0.22)',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
     marginLeft: SPACING.sm,
   },
   logoutBtnText: {
     ...TYPOGRAPHY.captionBold,
-    color: COLORS.white,
+    color: '#FCA5A5',
+    fontSize: 12,
   },
   content: {
     flex: 1,

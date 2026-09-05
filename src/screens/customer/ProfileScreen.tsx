@@ -172,17 +172,37 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     }
   };
 
+  const handleLogout = () => {
+    Alert.alert(
+      'Log Out',
+      'Are you sure you want to log out of your member account?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log Out',
+          style: 'destructive',
+          onPress: () => logout(),
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
       <View style={styles.header}>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, marginRight: SPACING.sm }}>
           <Text style={styles.headerTitle}>My Profile</Text>
-          <Text style={styles.headerSubtitle}>Manage your personal, contact & KYC details</Text>
+          <Text style={styles.headerSubtitle}>Manage personal, contact & KYC details</Text>
         </View>
-        <TouchableOpacity style={styles.editHeaderBtn} onPress={handleOpenEdit} activeOpacity={0.8}>
-          <Text style={styles.editHeaderBtnText}>✏️ Edit Profile</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRightActions}>
+          <TouchableOpacity style={styles.editHeaderBtn} onPress={handleOpenEdit} activeOpacity={0.8}>
+            <Text style={styles.editHeaderBtnText}>✏️ Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerLogoutBtn} onPress={handleLogout} activeOpacity={0.8}>
+            <Text style={styles.headerLogoutBtnText}>Log Out</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -464,8 +484,8 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         </Card>
 
         {/* Log Out button */}
-        <TouchableOpacity style={styles.switchRoleBtn} onPress={() => logout()} activeOpacity={0.8}>
-          <Text style={styles.switchRoleText}>Log Out from Account</Text>
+        <TouchableOpacity style={styles.switchRoleBtn} onPress={handleLogout} activeOpacity={0.8}>
+          <Text style={styles.switchRoleText}>🚪 Log Out from Account</Text>
         </TouchableOpacity>
 
         <Text style={styles.footerBuild}>
@@ -709,17 +729,35 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     marginTop: 2,
   },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs + 2,
+  },
   editHeaderBtn: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: SPACING.md,
+    paddingHorizontal: SPACING.sm + 4,
     paddingVertical: SPACING.sm,
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   editHeaderBtnText: {
     ...TYPOGRAPHY.captionBold,
     color: COLORS.white,
+    fontSize: 12,
+  },
+  headerLogoutBtn: {
+    backgroundColor: 'rgba(239, 68, 68, 0.22)',
+    paddingHorizontal: SPACING.sm + 4,
+    paddingVertical: SPACING.sm,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+  },
+  headerLogoutBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#FCA5A5',
     fontSize: 12,
   },
   scrollContent: {
