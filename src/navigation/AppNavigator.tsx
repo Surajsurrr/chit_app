@@ -49,10 +49,10 @@ const Tab = createBottomTabNavigator();
 function AdminTabNavigator() {
   const insets = useSafeAreaInsets();
   const isIOS = Platform.OS === 'ios';
-  const bottomInset = isIOS
-    ? (insets.bottom > 0 ? insets.bottom : 8)
-    : Math.max(insets.bottom, 8);
-  const tabHeight = (isIOS ? 56 : 58) + bottomInset;
+  // Enforce a generous safe bottom inset on iOS (min 30px, or native insets.bottom e.g. 34px)
+  // so text labels are never cut off by the display edge or iPhone home indicator
+  const safeBottom = Math.max(insets.bottom, isIOS ? 30 : 10);
+  const tabHeight = (isIOS ? 60 : 62) + safeBottom;
 
   return (
     <Tab.Navigator
@@ -77,12 +77,16 @@ function AdminTabNavigator() {
         tabBarActiveTintColor: COLORS.secondary,
         tabBarInactiveTintColor: COLORS.textMuted,
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10.5,
           fontWeight: '700',
           marginTop: 2,
+          marginBottom: 2,
+          letterSpacing: -0.2,
         },
         tabBarItemStyle: {
-          paddingTop: 6,
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingVertical: 2,
         },
         headerShown: false,
         tabBarStyle: {
@@ -90,8 +94,8 @@ function AdminTabNavigator() {
           borderTopWidth: 1,
           borderTopColor: COLORS.border,
           height: tabHeight,
-          paddingBottom: bottomInset,
-          paddingTop: 6,
+          paddingBottom: safeBottom,
+          paddingTop: 8,
           elevation: 16,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -4 },
@@ -113,10 +117,8 @@ function AdminTabNavigator() {
 function CustomerTabNavigator() {
   const insets = useSafeAreaInsets();
   const isIOS = Platform.OS === 'ios';
-  const bottomInset = isIOS
-    ? (insets.bottom > 0 ? insets.bottom : 8)
-    : Math.max(insets.bottom, 8);
-  const tabHeight = (isIOS ? 56 : 58) + bottomInset;
+  const safeBottom = Math.max(insets.bottom, isIOS ? 30 : 10);
+  const tabHeight = (isIOS ? 60 : 62) + safeBottom;
 
   return (
     <Tab.Navigator
@@ -139,12 +141,16 @@ function CustomerTabNavigator() {
         tabBarActiveTintColor: COLORS.success,
         tabBarInactiveTintColor: COLORS.textMuted,
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10.5,
           fontWeight: '700',
           marginTop: 2,
+          marginBottom: 2,
+          letterSpacing: -0.2,
         },
         tabBarItemStyle: {
-          paddingTop: 6,
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingVertical: 2,
         },
         headerShown: false,
         tabBarStyle: {
@@ -152,8 +158,8 @@ function CustomerTabNavigator() {
           borderTopWidth: 1,
           borderTopColor: COLORS.border,
           height: tabHeight,
-          paddingBottom: bottomInset,
-          paddingTop: 6,
+          paddingBottom: safeBottom,
+          paddingTop: 8,
           elevation: 16,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -4 },
