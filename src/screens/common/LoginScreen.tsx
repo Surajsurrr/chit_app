@@ -21,16 +21,13 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const {
     loginAsAdmin,
     loginAsCustomer,
-    registerAdmin,
     isCloudConnected,
     admins,
     customers,
   } = useChitData();
 
-  // Role tab: 'admin' or 'customer' (default: 'customer' or 'admin' - let's default to 'admin')
+  // Role tab: 'admin' or 'customer'
   const [loginTab, setLoginTab] = useState<'admin' | 'customer'>('admin');
-  // Admin authMode: 'signin' or 'signup' (only for admin)
-  const [adminAuthMode, setAdminAuthMode] = useState<'signin' | 'signup'>('signin');
 
   // Sign In states
   const [adminUsername, setAdminUsername] = useState('');
@@ -38,38 +35,14 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [customerIdentifier, setCustomerIdentifier] = useState('');
   const [customerPin, setCustomerPin] = useState('');
 
-  // Sign Up states - Admin only
-  const [regAdminUser, setRegAdminUser] = useState('');
-  const [regAdminPass, setRegAdminPass] = useState('');
-  const [regAdminConfirm, setRegAdminConfirm] = useState('');
-
   // General state handlers
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
-
-  // Success Feedback Modal & Persistent Banner states for Admin
-  const [successModal, setSuccessModal] = useState<{
-    visible: boolean;
-    role: 'admin';
-    title: string;
-    greeting: string;
-    message: string;
-    details: Array<{ label: string; value: string }>;
-    onContinue: () => void;
-  } | null>(null);
-
-  const [registrationBanner, setRegistrationBanner] = useState<{
-    role: 'admin';
-    text: string;
-  } | null>(null);
 
   const resetForm = () => {
     setAdminPassword('');
     setCustomerIdentifier('');
     setCustomerPin('');
-    setRegAdminUser('');
-    setRegAdminPass('');
-    setRegAdminConfirm('');
     setErrors({});
   };
 
@@ -138,71 +111,7 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
   };
 
-  // Registration handler - Admin only
-  const handleAdminSignUp = async () => {
-    setErrors({});
-    const newErrors: Record<string, string> = {};
 
-    if (!regAdminUser.trim()) newErrors.regAdminUser = 'Username is required';
-    if (!regAdminPass) {
-      newErrors.regAdminPass = 'Password is required';
-    } else if (regAdminPass.length < 6) {
-      newErrors.regAdminPass = 'Password must be at least 6 characters';
-    }
-
-    if (regAdminPass !== regAdminConfirm) {
-      newErrors.regAdminConfirm = 'Passwords do not match';
-    }
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const result = await registerAdmin(regAdminUser.trim(), regAdminPass);
-      setLoading(false);
-      if (result.success) {
-        const registeredUser = regAdminUser.trim();
-        const registeredPass = regAdminPass;
-        resetForm();
-
-        const proceedToSignIn = () => {
-          setSuccessModal(null);
-          setAdminAuthMode('signin');
-          setLoginTab('admin');
-          setAdminUsername(registeredUser);
-          setAdminPassword(registeredPass);
-          setRegistrationBanner({
-            role: 'admin',
-            text: `Organizer account "${registeredUser}" registered successfully! Please click "Sign In as Organizer" below.`,
-          });
-        };
-
-        setSuccessModal({
-          visible: true,
-          role: 'admin',
-          title: 'Successfully Registered! 🎉',
-          greeting: `Welcome, ${registeredUser}!`,
-          message:
-            'Your Chit Organizer (Admin) account has been registered in the centralized cloud database. You can now sign in with your credentials on any device to manage customers, lending terms, and collections.',
-          details: [
-            { label: 'Role', value: 'Chit Organizer (Admin)' },
-            { label: 'Username', value: registeredUser },
-            { label: 'Cloud Sync', value: 'Centralized Database' },
-            { label: 'Status', value: 'Active & Ready' },
-          ],
-          onContinue: proceedToSignIn,
-        });
-      } else {
-        setErrors({ registration: result.error || 'Failed to create admin' });
-      }
-    } catch (err: any) {
-      setLoading(false);
-      setErrors({ registration: err?.message || 'Registration failed' });
-    }
-  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -247,7 +156,6 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               style={[styles.tabBtn, loginTab === 'customer' ? styles.tabBtnActive : null]}
               onPress={() => {
                 setLoginTab('customer');
-                setAdminAuthMode('signin');
                 setErrors({});
               }}
               activeOpacity={0.8}
@@ -258,80 +166,15 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             </TouchableOpacity>
           </View>
 
-          {/* Admin Sub-tabs: Sign In vs Register Admin */}
-          {loginTab === 'admin' && (
-            <View style={styles.modeContainer}>
-              <TouchableOpacity
-                style={[styles.modeBtn, adminAuthMode === 'signin' ? styles.modeBtnActive : null]}
-                onPress={() => {
-                  setAdminAuthMode('signin');
-                  resetForm();
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.modeText, adminAuthMode === 'signin' ? styles.modeTextActive : null]}>
-                  Sign In
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modeBtn, adminAuthMode === 'signup' ? styles.modeBtnActive : null]}
-                onPress={() => {
-                  setAdminAuthMode('signup');
-                  resetForm();
-                  setRegistrationBanner(null);
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.modeText, adminAuthMode === 'signup' ? styles.modeTextActive : null]}>
-                  Register Admin Account
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
           {/* Credentials Card Form */}
           <Card style={styles.loginCard} padding={SPACING.lg}>
-            {/* Friendly Registration Success Banner */}
-            {registrationBanner && loginTab === 'admin' && adminAuthMode === 'signin' ? (
-              <View style={styles.successBanner}>
-                <View style={styles.successBannerIconBox}>
-                  <Text style={styles.successBannerEmoji}>🎉</Text>
-                </View>
-                <View style={{ flex: 1, marginHorizontal: SPACING.xs }}>
-                  <Text style={styles.successBannerTitle}>Successfully Registered!</Text>
-                  <Text style={styles.successBannerText}>{registrationBanner.text}</Text>
-                </View>
-                <TouchableOpacity
-                  onPress={() => setRegistrationBanner(null)}
-                  style={styles.bannerDismissBtn}
-                  accessibilityLabel="Dismiss message"
-                >
-                  <Text style={styles.bannerDismissText}>✕</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-
             {errors.login ? <Text style={styles.errorBanner}>{errors.login}</Text> : null}
-            {errors.registration ? <Text style={styles.errorBanner}>{errors.registration}</Text> : null}
 
-            {/* ==================== ADMIN FORMS ==================== */}
-            {loginTab === 'admin' && adminAuthMode === 'signin' && (
+            {/* ==================== ADMIN FORM (SIGN IN ONLY) ==================== */}
+            {loginTab === 'admin' && (
               <View>
                 <Text style={styles.formTitle}>Organizer Portal</Text>
                 <Text style={styles.formSub}>Log in to manage customer ledgers, payouts & collections</Text>
-
-                {admins.length === 0 && (
-                  <View style={styles.cleanSlateBanner}>
-                    <Text style={styles.cleanSlateIcon}>ℹ️</Text>
-                    <View style={{ flex: 1, marginLeft: SPACING.xs }}>
-                      <Text style={styles.cleanSlateTitle}>No Admin Registered Yet</Text>
-                      <Text style={styles.cleanSlateText}>
-                        Click "Register Admin Account" above to create your organizer credentials.
-                      </Text>
-                    </View>
-                  </View>
-                )}
 
                 <FormInput
                   label="Username"
@@ -361,59 +204,6 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 <Button
                   title="Sign In as Organizer"
                   onPress={handleAdminSignIn}
-                  loading={loading}
-                  style={styles.submitBtn}
-                  size="large"
-                />
-              </View>
-            )}
-
-            {loginTab === 'admin' && adminAuthMode === 'signup' && (
-              <View>
-                <Text style={styles.formTitle}>Create Admin Account</Text>
-                <Text style={styles.formSub}>Register credentials for a new chit organizer</Text>
-
-                <FormInput
-                  label="Choose Username"
-                  placeholder="e.g. manager1"
-                  value={regAdminUser}
-                  onChangeText={(val) => {
-                    setRegAdminUser(val);
-                    setErrors({});
-                  }}
-                  autoCapitalize="none"
-                  error={errors.regAdminUser}
-                />
-
-                <FormInput
-                  label="Password (min 6 characters)"
-                  placeholder="Create secure password"
-                  value={regAdminPass}
-                  onChangeText={(val) => {
-                    setRegAdminPass(val);
-                    setErrors({});
-                  }}
-                  secureTextEntry={true}
-                  error={errors.regAdminPass}
-                  autoCapitalize="none"
-                />
-
-                <FormInput
-                  label="Confirm Password"
-                  placeholder="Confirm password"
-                  value={regAdminConfirm}
-                  onChangeText={(val) => {
-                    setRegAdminConfirm(val);
-                    setErrors({});
-                  }}
-                  secureTextEntry={true}
-                  error={errors.regAdminConfirm}
-                  autoCapitalize="none"
-                />
-
-                <Button
-                  title="Register Admin Account"
-                  onPress={handleAdminSignUp}
                   loading={loading}
                   style={styles.submitBtn}
                   size="large"
@@ -498,56 +288,7 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Admin Registration Success Celebration Modal */}
-      {successModal && (
-        <Modal
-          visible={successModal.visible}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={successModal.onContinue}
-        >
-          <View style={styles.modalBackdrop}>
-            <View style={styles.successCard}>
-              <View style={styles.successBadgeOuter}>
-                <View style={styles.successBadgeInner}>
-                  <Text style={styles.successBadgeEmoji}>🎉</Text>
-                </View>
-              </View>
 
-              <Text style={styles.successModalTitle}>{successModal.title}</Text>
-              <Text style={styles.successModalGreeting}>{successModal.greeting}</Text>
-              <Text style={styles.successModalMessage}>{successModal.message}</Text>
-
-              <View style={styles.detailsContainer}>
-                {successModal.details.map((item, index) => (
-                  <View
-                    key={item.label}
-                    style={[
-                      styles.detailRow,
-                      index < successModal.details.length - 1 ? styles.detailRowBorder : null,
-                    ]}
-                  >
-                    <Text style={styles.detailLabel}>{item.label}</Text>
-                    <Text style={styles.detailValue}>{item.value}</Text>
-                  </View>
-                ))}
-              </View>
-
-              <TouchableOpacity
-                style={styles.successActionButton}
-                onPress={successModal.onContinue}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.successActionButtonText}>Sign In Now →</Text>
-              </TouchableOpacity>
-
-              <Text style={styles.successFooterNote}>
-                Credentials synced to centralized cloud database
-              </Text>
-            </View>
-          </View>
-        </Modal>
-      )}
     </SafeAreaView>
   );
 };
@@ -621,7 +362,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderRadius: 12,
     padding: 4,
-    marginBottom: SPACING.sm + 2,
+    marginBottom: SPACING.md,
   },
   tabBtn: {
     flex: 1,
