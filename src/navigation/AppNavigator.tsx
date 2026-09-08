@@ -2,7 +2,7 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, View, Platform } from 'react-native';
+import { ActivityIndicator, View, Platform, TouchableOpacity, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Constants
@@ -45,67 +45,208 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator();
 
-// Admin Tab Navigator
-function AdminTabNavigator() {
-  const insets = useSafeAreaInsets();
+interface CustomTabBarProps {
+  state: any;
+  descriptors: any;
+  navigation: any;
+  insets: any;
+}
+
+// Custom Tab Bar for Admin to guarantee zero text clipping and proper elevation on Web, iOS & Android
+function AdminCustomTabBar({ state, descriptors, navigation, insets }: CustomTabBarProps) {
   const isIOS = Platform.OS === 'ios';
-  
-  // Lift navigation buttons higher so text labels are fully visible and comfortably elevated
-  // above display edges, Android navigation bars, and iPhone home indicators
-  const bottomInset = isIOS
-    ? Math.max(insets.bottom, 34) + 12
-    : Math.max(insets.bottom, 16) + 16;
-  const tabHeight = (isIOS ? 68 : 66) + bottomInset;
+  const isWeb = Platform.OS === 'web';
+
+  // Comfortable bottom clearance lifting buttons well above screen edges,
+  // Android navigation bar, and iPhone home indicator
+  const bottomPadding = isIOS
+    ? Math.max(insets.bottom, 34) + 6
+    : isWeb
+      ? 16
+      : Math.max(insets.bottom, 12) + 14;
 
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ color, size }) => {
-          let iconName: keyof typeof Ionicons.glyphMap = 'grid';
+    <View
+      style={{
+        flexDirection: 'row',
+        backgroundColor: COLORS.white,
+        borderTopWidth: 1,
+        borderTopColor: COLORS.border,
+        paddingTop: 8,
+        paddingBottom: bottomPadding,
+        elevation: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      }}
+    >
+      {state.routes.map((route: any, index: number) => {
+        const { options } = descriptors[route.key];
+        const isFocused = state.index === index;
 
-          if (route.name === 'Dashboard') {
-            iconName = 'grid';
-          } else if (route.name === 'Customers') {
-            iconName = 'people';
-          } else if (route.name === 'Collections') {
-            iconName = 'cash';
-          } else if (route.name === 'Receipts') {
-            iconName = 'receipt';
-          } else if (route.name === 'Schemes') {
-            iconName = 'list';
+        const label =
+          options.tabBarLabel !== undefined
+            ? options.tabBarLabel
+            : options.title !== undefined
+            ? options.title
+            : route.name;
+
+        const onPress = () => {
+          const event = navigation.emit({
+            type: 'tabPress',
+            target: route.key,
+            canPreventDefault: true,
+          });
+
+          if (!isFocused && !event.defaultPrevented) {
+            navigation.navigate(route.name);
           }
+        };
 
-          return <Ionicons name={iconName} size={22} color={color} />;
-        },
-        tabBarActiveTintColor: COLORS.secondary,
-        tabBarInactiveTintColor: COLORS.textMuted,
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '700',
-          marginTop: 4,
-          marginBottom: 2,
-          letterSpacing: -0.1,
-        },
-        tabBarItemStyle: {
-          justifyContent: 'center',
-          alignItems: 'center',
-          paddingTop: 4,
-        },
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: COLORS.white,
-          borderTopWidth: 1,
-          borderTopColor: COLORS.border,
-          height: tabHeight,
-          paddingBottom: bottomInset,
-          paddingTop: 10,
-          elevation: 20,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -4 },
-          shadowOpacity: 0.12,
-          shadowRadius: 8,
-        },
+        let iconName: keyof typeof Ionicons.glyphMap = 'grid';
+        if (route.name === 'Dashboard') iconName = 'grid';
+        else if (route.name === 'Customers') iconName = 'people';
+        else if (route.name === 'Collections') iconName = 'cash';
+        else if (route.name === 'Receipts') iconName = 'receipt';
+        else if (route.name === 'Schemes') iconName = 'list';
+
+        const color = isFocused ? COLORS.secondary : COLORS.textMuted;
+
+        return (
+          <TouchableOpacity
+            key={route.key}
+            accessibilityRole="button"
+            accessibilityState={isFocused ? { selected: true } : {}}
+            accessibilityLabel={options.tabBarAccessibilityLabel}
+            onPress={onPress}
+            activeOpacity={0.7}
+            style={{
+              flex: 1,
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingVertical: 3,
+            }}
+          >
+            <Ionicons name={iconName} size={22} color={color} />
+            <Text
+              numberOfLines={1}
+              style={{
+                color,
+                fontSize: 11,
+                fontWeight: isFocused ? '700' : '600',
+                marginTop: 4,
+                textAlign: 'center',
+              }}
+            >
+              {label}
+            </Text>
+          </TouchableOpacity>
+        );
       })}
+    </View>
+  );
+}
+
+// Custom Tab Bar for Customer
+function CustomerCustomTabBar({ state, descriptors, navigation, insets }: CustomTabBarProps) {
+  const isIOS = Platform.OS === 'ios';
+  const isWeb = Platform.OS === 'web';
+
+  const bottomPadding = isIOS
+    ? Math.max(insets.bottom, 34) + 6
+    : isWeb
+      ? 16
+      : Math.max(insets.bottom, 12) + 14;
+
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        backgroundColor: COLORS.white,
+        borderTopWidth: 1,
+        borderTopColor: COLORS.border,
+        paddingTop: 8,
+        paddingBottom: bottomPadding,
+        elevation: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      }}
+    >
+      {state.routes.map((route: any, index: number) => {
+        const { options } = descriptors[route.key];
+        const isFocused = state.index === index;
+
+        const label =
+          options.tabBarLabel !== undefined
+            ? options.tabBarLabel
+            : options.title !== undefined
+            ? options.title
+            : route.name;
+
+        const onPress = () => {
+          const event = navigation.emit({
+            type: 'tabPress',
+            target: route.key,
+            canPreventDefault: true,
+          });
+
+          if (!isFocused && !event.defaultPrevented) {
+            navigation.navigate(route.name);
+          }
+        };
+
+        let iconName: keyof typeof Ionicons.glyphMap = 'home';
+        if (route.name === 'Home') iconName = 'home';
+        else if (route.name === 'MySchemes') iconName = 'layers';
+        else if (route.name === 'Receipts') iconName = 'receipt';
+        else if (route.name === 'Profile') iconName = 'person';
+
+        const color = isFocused ? COLORS.success : COLORS.textMuted;
+
+        return (
+          <TouchableOpacity
+            key={route.key}
+            accessibilityRole="button"
+            accessibilityState={isFocused ? { selected: true } : {}}
+            accessibilityLabel={options.tabBarAccessibilityLabel}
+            onPress={onPress}
+            activeOpacity={0.7}
+            style={{
+              flex: 1,
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingVertical: 3,
+            }}
+          >
+            <Ionicons name={iconName} size={22} color={color} />
+            <Text
+              numberOfLines={1}
+              style={{
+                color,
+                fontSize: 11,
+                fontWeight: isFocused ? '700' : '600',
+                marginTop: 4,
+                textAlign: 'center',
+              }}
+            >
+              {label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+// Admin Tab Navigator
+function AdminTabNavigator() {
+  return (
+    <Tab.Navigator
+      tabBar={(props) => <AdminCustomTabBar {...props} />}
+      screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Dashboard" component={DashboardScreen} />
       <Tab.Screen name="Customers" component={CustomersScreen} />
@@ -118,60 +259,10 @@ function AdminTabNavigator() {
 
 // Customer Tab Navigator
 function CustomerTabNavigator() {
-  const insets = useSafeAreaInsets();
-  const isIOS = Platform.OS === 'ios';
-  const bottomInset = isIOS
-    ? Math.max(insets.bottom, 34) + 12
-    : Math.max(insets.bottom, 16) + 16;
-  const tabHeight = (isIOS ? 68 : 66) + bottomInset;
-
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ color, size }) => {
-          let iconName: keyof typeof Ionicons.glyphMap = 'home';
-
-          if (route.name === 'Home') {
-            iconName = 'home';
-          } else if (route.name === 'MySchemes') {
-            iconName = 'layers';
-          } else if (route.name === 'Receipts') {
-            iconName = 'receipt';
-          } else if (route.name === 'Profile') {
-            iconName = 'person';
-          }
-
-          return <Ionicons name={iconName} size={22} color={color} />;
-        },
-        tabBarActiveTintColor: COLORS.success,
-        tabBarInactiveTintColor: COLORS.textMuted,
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '700',
-          marginTop: 4,
-          marginBottom: 2,
-          letterSpacing: -0.1,
-        },
-        tabBarItemStyle: {
-          justifyContent: 'center',
-          alignItems: 'center',
-          paddingTop: 4,
-        },
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: COLORS.white,
-          borderTopWidth: 1,
-          borderTopColor: COLORS.border,
-          height: tabHeight,
-          paddingBottom: bottomInset,
-          paddingTop: 10,
-          elevation: 20,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -4 },
-          shadowOpacity: 0.12,
-          shadowRadius: 8,
-        },
-      })}
+      tabBar={(props) => <CustomerCustomTabBar {...props} />}
+      screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="MySchemes" component={MySchemesScreen} options={{ tabBarLabel: 'My Schemes' }} />
