@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, SafeAreaView, ScrollView, TouchableOpacity, Alert, Modal } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, Modal, KeyboardAvoidingView, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useChitData } from '../../context/ChitDataContext';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
 import FormInput from '../../components/FormInput';
@@ -106,7 +107,7 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar style="light" />
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
@@ -115,7 +116,11 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
         <Text style={styles.headerTitle}>Add Customer</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         {/* Form Inputs */}
         <FormInput
           label="Customer Name"
@@ -223,6 +228,7 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
           size="large"
         />
       </ScrollView>
+    </KeyboardAvoidingView>
 
       {/* Registration Success Modal */}
       {successCustomer && (
@@ -316,7 +322,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.xl,
+    paddingTop: SPACING.md,
     paddingBottom: SPACING.md,
   },
   backButton: {

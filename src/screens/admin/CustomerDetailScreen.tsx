@@ -3,13 +3,13 @@ import {
   StyleSheet,
   Text,
   View,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   Alert,
   Linking,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useChitData } from '../../context/ChitDataContext';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 import Card from '../../components/Card';
@@ -26,7 +26,7 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
   
   if (!customer) {
     return (
-      <SafeAreaView style={styles.errorContainer}>
+      <SafeAreaView style={styles.errorContainer} edges={['top', 'bottom']}>
         <Text style={styles.errorText}>Customer record not found</Text>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Text style={styles.backBtnText}>Go Back</Text>
@@ -99,7 +99,7 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar style="light" />
       {/* Header */}
       <View style={styles.header}>
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.xl,
+    paddingTop: SPACING.md,
     paddingBottom: SPACING.md,
   },
   backButton: {

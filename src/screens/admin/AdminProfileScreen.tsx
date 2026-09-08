@@ -3,7 +3,6 @@ import {
   StyleSheet,
   Text,
   View,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   Modal,
@@ -13,6 +12,7 @@ import {
   Linking,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useChitData } from '../../context/ChitDataContext';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
 import Card from '../../components/Card';
@@ -177,7 +177,7 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar style="light" />
 
       {/* Screen Header */}
@@ -408,7 +408,7 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
         onRequestClose={() => setIsEditModalVisible(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalOverlay}
         >
           <View style={styles.modalContainer}>
@@ -584,7 +584,7 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.primary,
   },
   header: {
     flexDirection: 'row',
@@ -635,6 +635,8 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: SPACING.md,
     paddingBottom: SPACING.xxl,
+    backgroundColor: COLORS.background,
+    flexGrow: 1,
   },
   statusBoxComplete: {
     backgroundColor: '#ECFDF5',
@@ -1000,7 +1002,7 @@ const styles = StyleSheet.create({
   modalActions: {
     flexDirection: 'row',
     marginTop: SPACING.md,
-    marginBottom: SPACING.xl,
+    marginBottom: Platform.OS === 'ios' ? 36 : SPACING.xl,
   },
 });
 

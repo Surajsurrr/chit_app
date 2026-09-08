@@ -3,14 +3,16 @@ import {
   StyleSheet,
   Text,
   View,
-  SafeAreaView,
   TextInput,
   FlatList,
   TouchableOpacity,
-  Modal,
   ScrollView,
   Alert,
+  Modal,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useChitData } from '../../context/ChitDataContext';
 import { Customer } from '../../data/mockData';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
@@ -261,7 +263,7 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar style="light" />
       <View style={styles.header}>
         <View>
@@ -525,7 +527,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.xl,
+    paddingTop: SPACING.md,
     paddingBottom: SPACING.md,
   },
   headerTitle: {

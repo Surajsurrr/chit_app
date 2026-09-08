@@ -3,7 +3,6 @@ import {
   StyleSheet,
   Text,
   View,
-  SafeAreaView,
   TouchableOpacity,
   ScrollView,
   Modal,
@@ -11,7 +10,10 @@ import {
   TextInput,
   ActivityIndicator,
   Linking,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useChitData } from '../../context/ChitDataContext';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
 import Card from '../../components/Card';
@@ -84,7 +86,7 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
 
   if (!customer) {
     return (
-      <SafeAreaView style={styles.errorContainer}>
+      <SafeAreaView style={styles.errorContainer} edges={['top', 'bottom']}>
         <Text style={styles.errorText}>Customer account not selected.</Text>
         <Button title="Log Out" onPress={() => logout()} />
       </SafeAreaView>
@@ -203,7 +205,7 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar style="light" />
       <View style={styles.header}>
         <View style={{ flex: 1, marginRight: SPACING.sm }}>
@@ -508,14 +510,16 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         </Text>
       </ScrollView>
 
-      {/* Edit Profile Modal */}
       <Modal
         animationType="slide"
         transparent={true}
         visible={isEditModalVisible}
         onRequestClose={() => setIsEditModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalContent}>
             {/* Modal Header */}
             <View style={styles.modalHeader}>
@@ -743,10 +747,10 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
                 <Text style={styles.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
 
-              <View style={{ height: 40 }} />
+              <View style={{ height: Platform.OS === 'ios' ? 50 : 30 }} />
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -762,7 +766,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.xl,
+    paddingTop: SPACING.md,
     paddingBottom: SPACING.md,
   },
   headerTitle: {

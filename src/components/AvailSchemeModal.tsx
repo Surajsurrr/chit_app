@@ -11,6 +11,7 @@ import {
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../constants/theme';
 import { Scheme } from '../data/mockData';
 import { formatFrequency } from '../utils/dateHelpers';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface AvailSchemeModalProps {
   visible: boolean;
@@ -35,6 +36,8 @@ export const AvailSchemeModal: React.FC<AvailSchemeModalProps> = ({
   isProfileIncomplete,
   onNavigateProfile,
 }) => {
+  const insets = useSafeAreaInsets();
+
   if (!visible) return null;
 
   // Render Success Celebration View
@@ -243,7 +246,7 @@ export const AvailSchemeModal: React.FC<AvailSchemeModalProps> = ({
               </TouchableOpacity>
             </View>
 
-            <View style={{ height: 24 }} />
+            <View style={{ height: Math.max(insets.bottom, 24) + 16 }} />
           </ScrollView>
         </View>
       </View>

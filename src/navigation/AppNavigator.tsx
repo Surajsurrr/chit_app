@@ -48,8 +48,11 @@ const Tab = createBottomTabNavigator();
 // Admin Tab Navigator
 function AdminTabNavigator() {
   const insets = useSafeAreaInsets();
-  const bottomInset = Math.max(insets.bottom, 28);
-  const tabHeight = 65 + bottomInset;
+  const isIOS = Platform.OS === 'ios';
+  const bottomInset = isIOS
+    ? (insets.bottom > 0 ? insets.bottom : 8)
+    : Math.max(insets.bottom, 8);
+  const tabHeight = (isIOS ? 56 : 58) + bottomInset;
 
   return (
     <Tab.Navigator
@@ -69,17 +72,17 @@ function AdminTabNavigator() {
             iconName = 'list';
           }
 
-          return <Ionicons name={iconName} size={24} color={color} />;
+          return <Ionicons name={iconName} size={22} color={color} />;
         },
         tabBarActiveTintColor: COLORS.secondary,
         tabBarInactiveTintColor: COLORS.textMuted,
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '700',
-          marginTop: 4,
+          marginTop: 2,
         },
         tabBarItemStyle: {
-          paddingTop: 8,
+          paddingTop: 6,
         },
         headerShown: false,
         tabBarStyle: {
@@ -88,7 +91,7 @@ function AdminTabNavigator() {
           borderTopColor: COLORS.border,
           height: tabHeight,
           paddingBottom: bottomInset,
-          paddingTop: 8,
+          paddingTop: 6,
           elevation: 16,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -4 },
@@ -109,8 +112,11 @@ function AdminTabNavigator() {
 // Customer Tab Navigator
 function CustomerTabNavigator() {
   const insets = useSafeAreaInsets();
-  const bottomInset = Math.max(insets.bottom, 28);
-  const tabHeight = 65 + bottomInset;
+  const isIOS = Platform.OS === 'ios';
+  const bottomInset = isIOS
+    ? (insets.bottom > 0 ? insets.bottom : 8)
+    : Math.max(insets.bottom, 8);
+  const tabHeight = (isIOS ? 56 : 58) + bottomInset;
 
   return (
     <Tab.Navigator
@@ -128,17 +134,17 @@ function CustomerTabNavigator() {
             iconName = 'person';
           }
 
-          return <Ionicons name={iconName} size={24} color={color} />;
+          return <Ionicons name={iconName} size={22} color={color} />;
         },
         tabBarActiveTintColor: COLORS.success,
         tabBarInactiveTintColor: COLORS.textMuted,
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '700',
-          marginTop: 4,
+          marginTop: 2,
         },
         tabBarItemStyle: {
-          paddingTop: 8,
+          paddingTop: 6,
         },
         headerShown: false,
         tabBarStyle: {
@@ -147,7 +153,7 @@ function CustomerTabNavigator() {
           borderTopColor: COLORS.border,
           height: tabHeight,
           paddingBottom: bottomInset,
-          paddingTop: 8,
+          paddingTop: 6,
           elevation: 16,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -4 },

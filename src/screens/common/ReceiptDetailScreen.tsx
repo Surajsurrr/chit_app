@@ -3,7 +3,6 @@ import {
   StyleSheet,
   Text,
   View,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
@@ -11,6 +10,7 @@ import {
   Platform,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useChitData } from '../../context/ChitDataContext';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 import Card from '../../components/Card';
@@ -33,7 +33,7 @@ export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
 
   if (!receipt) {
     return (
-      <SafeAreaView style={styles.errorContainer}>
+      <SafeAreaView style={styles.errorContainer} edges={['top', 'bottom']}>
         <Text style={styles.errorText}>Receipt not found</Text>
         <Button title="Go Back" onPress={() => navigation.goBack()} />
       </SafeAreaView>
@@ -112,7 +112,7 @@ export const ReceiptDetailScreen: React.FC<{ route: any; navigation: any }> = ({
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar style="dark" />
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* If this was just recorded by admin, show prompt banner */}

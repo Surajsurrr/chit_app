@@ -3,11 +3,11 @@ import {
   StyleSheet,
   Text,
   View,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   Modal,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useChitData } from '../../context/ChitDataContext';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 import Card from '../../components/Card';
@@ -36,7 +36,7 @@ export const PaymentsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
   if (!customer) {
     return (
-      <SafeAreaView style={styles.errorContainer}>
+      <SafeAreaView style={styles.errorContainer} edges={['top', 'bottom']}>
         <Text style={styles.errorText}>Customer account not selected.</Text>
       </SafeAreaView>
     );
@@ -76,7 +76,7 @@ export const PaymentsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar style="light" />
       <View style={styles.header}>
         <Text style={styles.headerTitle}>My Payments</Text>
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.xl,
+    paddingTop: SPACING.md,
     paddingBottom: SPACING.md,
   },
   headerTitle: {
