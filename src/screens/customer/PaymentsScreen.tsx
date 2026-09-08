@@ -77,6 +77,10 @@ export const PaymentsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
                 <Text style={[styles.dueAmount, isOverdue && styles.overdueDueAmount]}>
                   ₹{customer.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(customer.frequency)} {isOverdue ? `(${statusInfo.statusText})` : ''}
                 </Text>
+                <View style={styles.dueRemainingStatRow}>
+                  <Text style={styles.dueRemainingStatLabel}>Remaining Balance: </Text>
+                  <Text style={styles.dueRemainingStatVal}>₹{stats.remainingAmount.toLocaleString('en-IN')}</Text>
+                </View>
                 <Text style={styles.adminCollectionNote}>
                   📌 Installments are collected & verified directly by Administrator
                 </Text>
@@ -198,6 +202,21 @@ const styles = StyleSheet.create({
   overdueDueAmount: {
     color: '#DC2626',
     fontWeight: '600',
+  },
+  dueRemainingStatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  dueRemainingStatLabel: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textMuted,
+    fontSize: 11,
+  },
+  dueRemainingStatVal: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.danger,
+    fontSize: 12,
   },
   adminCollectionNote: {
     ...TYPOGRAPHY.caption,

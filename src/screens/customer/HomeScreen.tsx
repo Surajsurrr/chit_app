@@ -22,6 +22,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     payments,
     receipts,
     getCustomerStats,
+    getSchemeStats,
     logout,
   } = useChitData();
 
@@ -224,11 +225,21 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               const name = schemeItem.loanName || `Scheme #${idx + 1}`;
               const sDate = schemeItem.startDate ? formatDateShort(schemeItem.startDate) : 'Active';
 
+              const schemeStats = getSchemeStats(customer.id, schemeItem.id || name);
+              const isSchemeSettled = schemeStats.remainingAmount === 0 && t > 0;
+
               return (
                 <Card key={schemeItem.id || idx} style={styles.schemeItemCard}>
                   <View style={styles.schemeItemHeader}>
-                    <View style={styles.schemeBadge}>
-                      <Text style={styles.schemeBadgeText}>{name}</Text>
+                    <View style={styles.schemeBadgeRow}>
+                      <View style={styles.schemeBadge}>
+                        <Text style={styles.schemeBadgeText}>{name}</Text>
+                      </View>
+                      {isSchemeSettled && (
+                        <View style={styles.schemeSettledBadge}>
+                          <Text style={styles.schemeSettledBadgeText}>✓ Settled</Text>
+                        </View>
+                      )}
                     </View>
                     <Text style={styles.schemeDateText}>Disbursed: {sDate}</Text>
                   </View>
@@ -246,6 +257,24 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       <Text style={styles.schemeGridLabel}>TOTAL REPAYABLE</Text>
                       <Text style={styles.schemeGridRepayVal}>₹{t.toLocaleString('en-IN')}</Text>
                     </View>
+                    <View style={styles.schemeGridCol}>
+                      <Text style={styles.schemeGridLabel}>PAID SO FAR</Text>
+                      <Text style={styles.schemeGridPaidVal}>₹{schemeStats.paidAmount.toLocaleString('en-IN')}</Text>
+                    </View>
+                    <View style={styles.schemeGridCol}>
+                      <Text style={styles.schemeGridLabel}>REMAINING</Text>
+                      <Text style={styles.schemeGridRemVal}>₹{schemeStats.remainingAmount.toLocaleString('en-IN')}</Text>
+                    </View>
+                  </View>
+
+                  {/* Scheme Mini Progress Bar */}
+                  <View style={styles.schemeProgressContainer}>
+                    <View style={styles.schemeProgressTrack}>
+                      <View style={[styles.schemeProgressBar, { width: `${schemeStats.progressPercentage}%` }]} />
+                    </View>
+                    <Text style={styles.schemeProgressPercentageText}>
+                      {Math.round(schemeStats.progressPercentage)}% Paid
+                    </Text>
                   </View>
 
                   <View style={styles.schemeFooter}>
@@ -802,6 +831,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: SPACING.xs,
   },
+  schemeBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
   schemeBadge: {
     backgroundColor: '#DBEAFE',
     paddingHorizontal: 7,
@@ -813,6 +847,19 @@ const styles = StyleSheet.create({
     color: '#1E40AF',
     fontSize: 10,
   },
+  schemeSettledBadge: {
+    backgroundColor: '#DEF7EC',
+    borderColor: '#31C48D',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  schemeSettledBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#03543F',
+    fontSize: 9,
+  },
   schemeDateText: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textMuted,
@@ -822,33 +869,76 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     backgroundColor: '#F8FAFC',
-    borderRadius: 6,
-    padding: SPACING.xs + 2,
-    marginBottom: 4,
+    borderRadius: 8,
+    padding: SPACING.xs + 4,
+    marginBottom: SPACING.xs,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    flexWrap: 'wrap',
+    gap: SPACING.xs,
   },
   schemeGridCol: {
     alignItems: 'center',
+    flex: 1,
+    minWidth: 65,
   },
   schemeGridLabel: {
     ...TYPOGRAPHY.captionBold,
     fontSize: 8,
     color: COLORS.textMuted,
     marginBottom: 2,
+    textAlign: 'center',
+    letterSpacing: 0.3,
   },
   schemeGridPayoutVal: {
     ...TYPOGRAPHY.captionBold,
-    fontSize: 11,
+    fontSize: 12,
     color: '#2563EB',
   },
   schemeGridInterestVal: {
     ...TYPOGRAPHY.captionBold,
-    fontSize: 11,
+    fontSize: 12,
     color: '#D97706',
   },
   schemeGridRepayVal: {
     ...TYPOGRAPHY.captionBold,
-    fontSize: 11,
+    fontSize: 12,
     color: COLORS.primary,
+  },
+  schemeGridPaidVal: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 12,
+    color: COLORS.success,
+  },
+  schemeGridRemVal: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 12,
+    color: COLORS.danger,
+    fontWeight: '700',
+  },
+  schemeProgressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginBottom: SPACING.xs,
+  },
+  schemeProgressTrack: {
+    flex: 1,
+    height: 5,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 2.5,
+    overflow: 'hidden',
+  },
+  schemeProgressBar: {
+    height: '100%',
+    backgroundColor: COLORS.success,
+  },
+  schemeProgressPercentageText: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 9,
+    color: COLORS.textMuted,
+    minWidth: 46,
+    textAlign: 'right',
   },
   schemeFooter: {
     marginTop: 2,
