@@ -17,9 +17,16 @@ import FormInput from '../../components/FormInput';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import { StatusBar } from 'expo-status-bar';
-
 export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { loginAsAdmin, loginAsCustomer, registerAdmin, registerCustomer, admins, customers, schemes } = useChitData();
+  const {
+    loginAsAdmin,
+    loginAsCustomer,
+    registerAdmin,
+    registerCustomer,
+    isCloudConnected,
+    admins,
+    customers,
+  } = useChitData();
 
   // Mode tabs: 'signin' or 'signup'
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
@@ -78,7 +85,7 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   };
 
   // Login handler - Admin
-  const handleAdminSignIn = () => {
+  const handleAdminSignIn = async () => {
     setErrors({});
     const newErrors: Record<string, string> = {};
     if (!adminUsername.trim()) newErrors.adminUsername = 'Username is required';
@@ -90,19 +97,22 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
 
     setLoading(true);
-    setTimeout(() => {
-      const result = loginAsAdmin(adminUsername.trim(), adminPassword);
+    try {
+      const result = await loginAsAdmin(adminUsername.trim(), adminPassword);
       setLoading(false);
       if (result.success) {
         resetForm();
       } else {
         setErrors({ login: result.error || 'Authentication failed' });
       }
-    }, 200);
+    } catch (err: any) {
+      setLoading(false);
+      setErrors({ login: err?.message || 'Authentication failed' });
+    }
   };
 
   // Login handler - Customer
-  const handleCustomerSignIn = () => {
+  const handleCustomerSignIn = async () => {
     setErrors({});
     const newErrors: Record<string, string> = {};
 
@@ -124,19 +134,22 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
 
     setLoading(true);
-    setTimeout(() => {
-      const result = loginAsCustomer(customerPhone.trim(), customerPin);
+    try {
+      const result = await loginAsCustomer(customerPhone.trim(), customerPin);
       setLoading(false);
       if (result.success) {
         resetForm();
       } else {
         setErrors({ login: result.error || 'Authentication failed' });
       }
-    }, 200);
+    } catch (err: any) {
+      setLoading(false);
+      setErrors({ login: err?.message || 'Authentication failed' });
+    }
   };
 
   // Registration handler - Admin
-  const handleAdminSignUp = () => {
+  const handleAdminSignUp = async () => {
     setErrors({});
     const newErrors: Record<string, string> = {};
 
@@ -157,8 +170,8 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
 
     setLoading(true);
-    setTimeout(() => {
-      const result = registerAdmin(regAdminUser.trim(), regAdminPass);
+    try {
+      const result = await registerAdmin(regAdminUser.trim(), regAdminPass);
       setLoading(false);
       if (result.success) {
         const registeredUser = regAdminUser.trim();
@@ -183,10 +196,11 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           title: 'Successfully Registered! 🎉',
           greeting: `Welcome, ${registeredUser}!`,
           message:
-            'Your Chit Organizer (Admin) account has been created successfully. You can now sign in with your credentials to manage chit schemes, track member payments, and set up your organizer profile.',
+            'Your Chit Organizer (Admin) account has been registered in the centralized cloud database. You can now sign in with your credentials on any device (iPhone, Android, web) to manage chit schemes and payments.',
           details: [
             { label: 'Role', value: 'Chit Organizer (Admin)' },
             { label: 'Username', value: registeredUser },
+            { label: 'Cloud Sync', value: 'Centralized Database' },
             { label: 'Status', value: 'Active & Ready' },
           ],
           onContinue: proceedToSignIn,
@@ -194,11 +208,14 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       } else {
         setErrors({ registration: result.error || 'Failed to create admin' });
       }
-    }, 400);
+    } catch (err: any) {
+      setLoading(false);
+      setErrors({ registration: err?.message || 'Registration failed' });
+    }
   };
 
   // Registration handler - Customer
-  const handleCustomerSignUp = () => {
+  const handleCustomerSignUp = async () => {
     setErrors({});
     const newErrors: Record<string, string> = {};
 
@@ -225,8 +242,8 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
 
     setLoading(true);
-    setTimeout(() => {
-      const result = registerCustomer(
+    try {
+      const result = await registerCustomer(
         regCustName.trim(),
         regCustPhone.trim(),
         regCustPin
@@ -256,11 +273,12 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           title: 'Successfully Registered! 🎉',
           greeting: `Welcome, ${registeredName}!`,
           message:
-            'Your Member account has been registered successfully. You can now sign in using your registered mobile number and 4-digit PIN to track chit schemes and download payment receipts.',
+            'Your Member account has been registered in the centralized cloud database. You can now sign in using your registered mobile number and 4-digit PIN from any device to track chit schemes and download payment receipts.',
           details: [
             { label: 'Role', value: 'Chit Member (Customer)' },
             { label: 'Member Name', value: registeredName },
             { label: 'Phone Number', value: registeredPhone },
+            { label: 'Cloud Sync', value: 'Centralized Database' },
             { label: 'Status', value: 'Active & Ready' },
           ],
           onContinue: proceedToSignIn,
@@ -268,7 +286,10 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       } else {
         setErrors({ registration: result.error || 'Failed to register customer' });
       }
-    }, 400);
+    } catch (err: any) {
+      setLoading(false);
+      setErrors({ registration: err?.message || 'Registration failed' });
+    }
   };
 
   return (
@@ -287,6 +308,12 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             </View>
             <Text style={styles.brandName}>ChitFlow</Text>
             <Text style={styles.brandSub}>Secure Recurring Payment System</Text>
+            <View style={styles.cloudBadge}>
+              <View style={[styles.cloudDot, { backgroundColor: isCloudConnected ? '#10B981' : '#F59E0B' }]} />
+              <Text style={styles.cloudBadgeText}>
+                {isCloudConnected ? '☁️ Central Cloud Sync Online' : '💾 Local Storage Mode'}
+              </Text>
+            </View>
           </View>
 
           {/* Mode Switcher (Sign In vs Sign Up) */}
@@ -702,6 +729,27 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.textLight,
     marginTop: 2,
+  },
+  cloudBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    marginTop: SPACING.xs + 2,
+  },
+  cloudDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  cloudBadgeText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: '600',
   },
   modeContainer: {
     flexDirection: 'row',
