@@ -33,7 +33,9 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
   const [editAddress, setEditAddress] = useState('');
   const [editCity, setEditCity] = useState('');
   const [editPincode, setEditPincode] = useState('');
+  const [editUsername, setEditUsername] = useState('');
   const [editPassword, setEditPassword] = useState('');
+  const [editConfirmPassword, setEditConfirmPassword] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
@@ -77,7 +79,9 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
     setEditAddress(currentAdmin?.address || '');
     setEditCity(currentAdmin?.city || '');
     setEditPincode(currentAdmin?.pincode || '');
+    setEditUsername(currentAdmin?.username || '');
     setEditPassword('');
+    setEditConfirmPassword('');
     setFormErrors({});
     setLocationHint(null);
     setIsFetchingLocation(false);
@@ -89,6 +93,15 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
 
     if (!editName.trim()) {
       errors.name = 'Full name is required (mandatory)';
+    }
+
+    const cleanUsername = editUsername.trim();
+    if (!cleanUsername) {
+      errors.username = 'Admin login username is required (mandatory)';
+    } else if (cleanUsername.length < 3) {
+      errors.username = 'Username must be at least 3 characters';
+    } else if (!/^[a-zA-Z0-9_.-]+$/.test(cleanUsername)) {
+      errors.username = 'Username can only contain letters, numbers, hyphens, and underscores';
     }
 
     const cleanPhone = editPhone.trim().replace(/[^0-9]/g, '');
@@ -116,8 +129,12 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
       }
     }
 
-    if (editPassword && editPassword.length < 6) {
-      errors.password = 'New password must be at least 6 characters';
+    if (editPassword.trim()) {
+      if (editPassword.trim().length < 6) {
+        errors.password = 'New password must be at least 6 characters';
+      } else if (editPassword !== editConfirmPassword) {
+        errors.confirmPassword = 'Passwords do not match';
+      }
     }
 
     setFormErrors(errors);
@@ -138,6 +155,11 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
       pincode: editPincode.trim() || undefined,
     };
 
+    const cleanUser = editUsername.trim();
+    if (cleanUser && cleanUser.toLowerCase() !== (currentAdmin?.username || '').toLowerCase()) {
+      updatedData.newUsername = cleanUser;
+    }
+
     if (editPassword.trim()) {
       updatedData.password = editPassword.trim();
     }
@@ -149,7 +171,7 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
       setIsEditModalVisible(false);
       Alert.alert(
         'Profile Updated! 🎉',
-        'Your organizer profile information and business details have been saved.'
+        'Your organizer profile information and credentials have been updated.'
       );
     } else {
       Alert.alert('Error', res.error || 'Failed to update admin profile');
@@ -387,7 +409,12 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
         </Card>
 
         {/* Security & Credentials */}
-        <Text style={styles.sectionTitle}>Security & Access</Text>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Security & Credentials</Text>
+          <TouchableOpacity onPress={handleOpenEdit}>
+            <Text style={styles.sectionEditLink}>Change</Text>
+          </TouchableOpacity>
+        </View>
         <Card style={styles.infoCard}>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Login Username</Text>
@@ -429,6 +456,18 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
             {/* Modal Form */}
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               <Text style={styles.formSectionTitle}>ORGANIZER DETAILS</Text>
+
+              <FormInput
+                label="Admin Username (Login ID) *"
+                placeholder="e.g. admin or organizer_1"
+                value={editUsername}
+                onChangeText={(val) => {
+                  setEditUsername(val);
+                  setFormErrors((prev) => ({ ...prev, username: '' }));
+                }}
+                autoCapitalize="none"
+                error={formErrors.username}
+              />
 
               <FormInput
                 label="Organizer Full Name *"
@@ -543,7 +582,7 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
                 </View>
               ) : null}
 
-              <Text style={styles.formSectionTitle}>SECURITY (OPTIONAL)</Text>
+              <Text style={styles.formSectionTitle}>SECURITY & PASSWORD (OPTIONAL)</Text>
 
               <FormInput
                 label="New Password (leave blank to keep unchanged)"
@@ -551,12 +590,27 @@ export const AdminProfileScreen: React.FC<{ navigation: any }> = ({ navigation }
                 value={editPassword}
                 onChangeText={(val) => {
                   setEditPassword(val);
-                  setFormErrors((prev) => ({ ...prev, password: '' }));
+                  setFormErrors((prev) => ({ ...prev, password: '', confirmPassword: '' }));
                 }}
                 secureTextEntry={true}
                 autoCapitalize="none"
                 error={formErrors.password}
               />
+
+              {editPassword.length > 0 && (
+                <FormInput
+                  label="Confirm New Password *"
+                  placeholder="Re-enter new password"
+                  value={editConfirmPassword}
+                  onChangeText={(val) => {
+                    setEditConfirmPassword(val);
+                    setFormErrors((prev) => ({ ...prev, confirmPassword: '' }));
+                  }}
+                  secureTextEntry={true}
+                  autoCapitalize="none"
+                  error={formErrors.confirmPassword}
+                />
+              )}
 
               <View style={styles.modalActions}>
                 <Button

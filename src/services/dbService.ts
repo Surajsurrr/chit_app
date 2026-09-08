@@ -250,11 +250,29 @@ export const dbService = {
 
   async updateAdminProfile(
     username: string,
-    updatedData: Partial<AdminCredentials>
+    updatedData: Partial<AdminCredentials> & { newUsername?: string }
   ): Promise<{ success: boolean; error?: string }> {
+    const cleanCurrent = username.trim();
+    const cleanNew = updatedData.newUsername ? updatedData.newUsername.trim() : undefined;
+    const isChangingUsername = cleanNew && cleanNew.toLowerCase() !== cleanCurrent.toLowerCase();
+
     if (this.isLive()) {
       try {
+        if (isChangingUsername) {
+          // Check if new username is already taken by another admin
+          const { data: existingAdmin } = await supabase
+            .from('admins')
+            .select('username')
+            .ilike('username', cleanNew)
+            .maybeSingle();
+
+          if (existingAdmin && existingAdmin.username.toLowerCase() !== cleanCurrent.toLowerCase()) {
+            return { success: false, error: `Username "${cleanNew}" is already taken.` };
+          }
+        }
+
         const rowUpdates: any = {};
+        if (isChangingUsername) rowUpdates.username = cleanNew;
         if (updatedData.name !== undefined) rowUpdates.name = updatedData.name;
         if (updatedData.businessName !== undefined) rowUpdates.business_name = updatedData.businessName;
         if (updatedData.phone !== undefined) rowUpdates.phone = updatedData.phone;
@@ -262,12 +280,14 @@ export const dbService = {
         if (updatedData.address !== undefined) rowUpdates.address = updatedData.address;
         if (updatedData.city !== undefined) rowUpdates.city = updatedData.city;
         if (updatedData.pincode !== undefined) rowUpdates.pincode = updatedData.pincode;
-        if (updatedData.password !== undefined) rowUpdates.password = updatedData.password;
+        if (updatedData.password !== undefined && updatedData.password.trim().length > 0) {
+          rowUpdates.password = updatedData.password.trim();
+        }
 
         const { error } = await supabase
           .from('admins')
           .update(rowUpdates)
-          .ilike('username', username.trim());
+          .ilike('username', cleanCurrent);
 
         if (error) throw error;
         await this.fetchAdmins();
@@ -279,9 +299,18 @@ export const dbService = {
     }
 
     const admins = await this.fetchAdmins();
-    const updated = admins.map((a) =>
-      a.username.toLowerCase() === username.toLowerCase() ? { ...a, ...updatedData } : a
-    );
+    const targetNew = isChangingUsername ? cleanNew! : cleanCurrent;
+    const updated = admins.map((a) => {
+      if (a.username.toLowerCase() === cleanCurrent.toLowerCase()) {
+        return {
+          ...a,
+          ...updatedData,
+          username: targetNew,
+          password: updatedData.password ? updatedData.password.trim() : a.password,
+        };
+      }
+      return a;
+    });
     await AsyncStorage.setItem(CACHE_KEYS.ADMINS, JSON.stringify(updated));
     return { success: true };
   },

@@ -57,8 +57,17 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   >('Aadhaar');
   const [editIdProofNumber, setEditIdProofNumber] = useState('');
   const [editPin, setEditPin] = useState('');
+  const [editConfirmPin, setEditConfirmPin] = useState('');
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
   const [locationHint, setLocationHint] = useState<string | null>(null);
+
+  // Dedicated Change Password / PIN modal states
+  const [isChangePinModalVisible, setIsChangePinModalVisible] = useState(false);
+  const [currentPinInput, setCurrentPinInput] = useState('');
+  const [newPinInput, setNewPinInput] = useState('');
+  const [confirmPinInput, setConfirmPinInput] = useState('');
+  const [pinChangeErrors, setPinChangeErrors] = useState<Record<string, string>>({});
+  const [isUpdatingPin, setIsUpdatingPin] = useState(false);
 
   // Form validation errors
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -118,11 +127,67 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     setEditNomineeRelation(customer.nomineeRelation || '');
     setEditIdProofType(customer.idProofType || 'Aadhaar');
     setEditIdProofNumber(customer.idProofNumber || '');
-    setEditPin(customer.pin || '');
+    setEditPin('');
+    setEditConfirmPin('');
     setFormErrors({});
     setLocationHint(null);
     setIsFetchingLocation(false);
     setIsEditModalVisible(true);
+  };
+
+  const handleOpenChangePinModal = () => {
+    setCurrentPinInput('');
+    setNewPinInput('');
+    setConfirmPinInput('');
+    setPinChangeErrors({});
+    setIsChangePinModalVisible(true);
+  };
+
+  const handleChangePinSubmit = async () => {
+    const errors: Record<string, string> = {};
+
+    if (!currentPinInput.trim()) {
+      errors.currentPin = 'Current 4-digit PIN is required';
+    } else if (currentPinInput.trim() !== customer.pin) {
+      errors.currentPin = 'Current PIN is incorrect';
+    }
+
+    if (!newPinInput.trim()) {
+      errors.newPin = 'New 4-digit PIN is required';
+    } else if (!/^\d{4}$/.test(newPinInput.trim())) {
+      errors.newPin = 'New PIN must be exactly 4 numeric digits (0-9)';
+    }
+
+    if (!confirmPinInput.trim()) {
+      errors.confirmPin = 'Please confirm your new PIN';
+    } else if (newPinInput.trim() !== confirmPinInput.trim()) {
+      errors.confirmPin = 'New PIN and confirm PIN do not match';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setPinChangeErrors(errors);
+      return;
+    }
+
+    setIsUpdatingPin(true);
+    try {
+      const res = await updateCustomerProfile(customer.id, {
+        pin: newPinInput.trim(),
+      });
+      setIsUpdatingPin(false);
+      if (res.success) {
+        setIsChangePinModalVisible(false);
+        Alert.alert(
+          'Password / PIN Updated! 🔐🎉',
+          'Your new 4-digit login password/PIN has been saved successfully. Please use it when you next sign in.'
+        );
+      } else {
+        Alert.alert('Error', res.error || 'Failed to update PIN');
+      }
+    } catch (e: any) {
+      setIsUpdatingPin(false);
+      Alert.alert('Error', e?.message || 'Failed to update PIN');
+    }
   };
 
   const isCustProfileComplete = isCustomerProfileComplete(customer.id);
@@ -156,8 +221,12 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
       errors.pincode = 'Pincode must be 6 digits';
     }
 
-    if (editPin.trim() && !/^\d{4}$/.test(editPin.trim())) {
-      errors.pin = 'PIN must be exactly 4 digits';
+    if (editPin.trim()) {
+      if (!/^\d{4}$/.test(editPin.trim())) {
+        errors.pin = 'New PIN must be exactly 4 digits (0-9)';
+      } else if (editPin.trim() !== editConfirmPin.trim()) {
+        errors.confirmPin = 'New PIN and confirm PIN do not match';
+      }
     }
 
     setFormErrors(errors);
@@ -490,12 +559,18 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         {/* Security & Login Card */}
         <Card style={styles.securityCard}>
           <View style={styles.securityRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.securityTitle}>Account Security & PIN</Text>
-              <Text style={styles.securitySub}>4-Digit PIN used to access your member portal</Text>
+            <View style={{ flex: 1, marginRight: SPACING.sm }}>
+              <Text style={styles.securityTitle}>Account Security & Password / PIN</Text>
+              <Text style={styles.securitySub}>
+                4-Digit PIN used to access your member portal (••••)
+              </Text>
             </View>
-            <TouchableOpacity style={styles.changePinBtn} onPress={handleOpenEdit}>
-              <Text style={styles.changePinBtnText}>Change PIN</Text>
+            <TouchableOpacity
+              style={styles.changePinBtn}
+              onPress={handleOpenChangePinModal}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.changePinBtnText}>🔒 Change Password / PIN</Text>
             </TouchableOpacity>
           </View>
         </Card>
@@ -709,19 +784,36 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
               />
 
               {/* Security PIN update */}
-              <Text style={styles.formCategoryLabel}>SECURITY & LOGIN PIN</Text>
+              <Text style={styles.formCategoryLabel}>SECURITY & LOGIN PASSWORD / PIN (OPTIONAL)</Text>
               <FormInput
-                label="4-Digit Login PIN"
-                placeholder="Enter 4-digit PIN"
+                label="New 4-Digit Login PIN (leave blank to keep current)"
+                placeholder="Enter new 4-digit PIN"
                 value={editPin}
                 onChangeText={(val) => {
                   setEditPin(val);
-                  setFormErrors((prev) => ({ ...prev, pin: '' }));
+                  setFormErrors((prev) => ({ ...prev, pin: '', confirmPin: '' }));
                 }}
                 keyboardType="numeric"
+                maxLength={4}
                 secureTextEntry={true}
                 error={formErrors.pin}
               />
+
+              {editPin.length > 0 && (
+                <FormInput
+                  label="Confirm New 4-Digit PIN *"
+                  placeholder="Re-enter new 4-digit PIN"
+                  value={editConfirmPin}
+                  onChangeText={(val) => {
+                    setEditConfirmPin(val);
+                    setFormErrors((prev) => ({ ...prev, confirmPin: '' }));
+                  }}
+                  keyboardType="numeric"
+                  maxLength={4}
+                  secureTextEntry={true}
+                  error={formErrors.confirmPin}
+                />
+              )}
 
               {/* Save Button */}
               <TouchableOpacity
@@ -748,6 +840,104 @@ export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
               </TouchableOpacity>
 
               <View style={{ height: Platform.OS === 'ios' ? 50 : 30 }} />
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Dedicated Change Password / PIN Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={isChangePinModalVisible}
+        onRequestClose={() => setIsChangePinModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Change Password / PIN</Text>
+                <Text style={styles.modalSubtitle}>Update your 4-digit login security PIN</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setIsChangePinModalVisible(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Text style={styles.modalCloseBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalScroll} keyboardShouldPersistTaps="handled">
+              <FormInput
+                label="Current 4-Digit PIN *"
+                placeholder="Enter current 4-digit PIN"
+                value={currentPinInput}
+                onChangeText={(val) => {
+                  setCurrentPinInput(val);
+                  setPinChangeErrors((prev) => ({ ...prev, currentPin: '' }));
+                }}
+                keyboardType="numeric"
+                maxLength={4}
+                secureTextEntry={true}
+                error={pinChangeErrors.currentPin}
+              />
+
+              <FormInput
+                label="New 4-Digit PIN *"
+                placeholder="Enter new 4-digit PIN"
+                value={newPinInput}
+                onChangeText={(val) => {
+                  setNewPinInput(val);
+                  setPinChangeErrors((prev) => ({ ...prev, newPin: '', confirmPin: '' }));
+                }}
+                keyboardType="numeric"
+                maxLength={4}
+                secureTextEntry={true}
+                error={pinChangeErrors.newPin}
+              />
+
+              <FormInput
+                label="Confirm New 4-Digit PIN *"
+                placeholder="Re-enter new 4-digit PIN"
+                value={confirmPinInput}
+                onChangeText={(val) => {
+                  setConfirmPinInput(val);
+                  setPinChangeErrors((prev) => ({ ...prev, confirmPin: '' }));
+                }}
+                keyboardType="numeric"
+                maxLength={4}
+                secureTextEntry={true}
+                error={pinChangeErrors.confirmPin}
+              />
+
+              <TouchableOpacity
+                style={[styles.saveBtn, isUpdatingPin && styles.saveBtnDisabled]}
+                onPress={handleChangePinSubmit}
+                disabled={isUpdatingPin}
+                activeOpacity={0.85}
+              >
+                {isUpdatingPin ? (
+                  <View style={styles.btnRow}>
+                    <ActivityIndicator color={COLORS.white} size="small" />
+                    <Text style={styles.saveBtnText}>Updating PIN...</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.saveBtnText}>Update Password / PIN</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setIsChangePinModalVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <View style={{ height: Platform.OS === 'ios' ? 40 : 20 }} />
             </ScrollView>
           </View>
         </KeyboardAvoidingView>

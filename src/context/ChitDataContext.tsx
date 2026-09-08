@@ -119,7 +119,7 @@ export interface ChitDataContextType {
     updatedData: Partial<Customer>
   ) => Promise<{ success: boolean; error?: string }>;
   updateAdminProfile: (
-    updatedData: Partial<AdminCredentials>
+    updatedData: Partial<AdminCredentials> & { newUsername?: string }
   ) => Promise<{ success: boolean; error?: string }>;
   addLoanToCustomer: (
     customerId: string,
@@ -1276,7 +1276,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const updateAdminProfile = async (
-    updatedData: Partial<AdminCredentials>
+    updatedData: Partial<AdminCredentials> & { newUsername?: string }
   ): Promise<{ success: boolean; error?: string }> => {
     const targetUsername =
       currentAdmin?.username || currentAdminUser || (admins.length > 0 ? admins[0].username : null);
@@ -1291,12 +1291,25 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return res;
     }
 
+    const cleanNew = updatedData.newUsername ? updatedData.newUsername.trim() : undefined;
+    const finalUsername = cleanNew || effectiveUser;
+
+    if (cleanNew && cleanNew.toLowerCase() !== effectiveUser.toLowerCase()) {
+      setCurrentAdminUser(cleanNew);
+      try {
+        await AsyncStorage.setItem(STORAGE_KEYS.CURRENT_ADMIN_USER, cleanNew);
+      } catch (e) {
+        console.error('Failed to save updated admin username to storage:', e);
+      }
+    }
+
     const updatedAdmins = admins.map((a) => {
       if (a.username.toLowerCase() === effectiveUser.toLowerCase()) {
         return {
           ...a,
           ...updatedData,
-          username: a.username,
+          username: finalUsername,
+          password: updatedData.password ? updatedData.password.trim() : a.password,
         };
       }
       return a;
