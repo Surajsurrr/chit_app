@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS schemes (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. Create CUSTOMERS Table
+-- 4. Create CUSTOMERS Table (Direct Lending & Chit Ledger)
 CREATE TABLE IF NOT EXISTS customers (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -44,7 +44,12 @@ CREATE TABLE IF NOT EXISTS customers (
   pin TEXT NOT NULL,
   scheme_id TEXT DEFAULT '',
   amount_given NUMERIC DEFAULT 0,
+  total_amount NUMERIC DEFAULT 0,
+  payout_amount NUMERIC DEFAULT 0,
+  interest_amount NUMERIC DEFAULT 0,
+  interest_rate NUMERIC DEFAULT 0,
   collection_amount NUMERIC DEFAULT 0,
+  duration_installments INTEGER DEFAULT 0,
   frequency TEXT DEFAULT 'monthly',
   start_date TIMESTAMPTZ DEFAULT NOW(),
   next_payment_date TIMESTAMPTZ,
@@ -61,6 +66,13 @@ CREATE TABLE IF NOT EXISTS customers (
   enrolled_schemes JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Migration for existing databases: Add direct lending fields if missing
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS payout_amount NUMERIC DEFAULT 0;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS interest_amount NUMERIC DEFAULT 0;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS interest_rate NUMERIC DEFAULT 0;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS total_amount NUMERIC DEFAULT 0;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS duration_installments INTEGER DEFAULT 0;
 
 -- 5. Create PAYMENTS Table
 CREATE TABLE IF NOT EXISTS payments (

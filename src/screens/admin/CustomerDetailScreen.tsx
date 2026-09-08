@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,22 +8,38 @@ import {
   Alert,
   Linking,
   Platform,
+  Modal,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useChitData } from '../../context/ChitDataContext';
-import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
 import Card from '../../components/Card';
 import StatusBadge from '../../components/StatusBadge';
 import TransactionRow from '../../components/TransactionRow';
+import FormInput from '../../components/FormInput';
+import Button from '../../components/Button';
 import { formatDateLong, formatDateShort, getPaymentStatusInfo, formatFrequency } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
 
 export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = ({ route, navigation }) => {
   const { customerId } = route.params;
-  const { customers, payments, schemes, getCustomerStats } = useChitData();
+  const { customers, payments, getCustomerStats, updateCustomerTerms } = useChitData();
 
   const customer = customers.find((c) => c.id === customerId);
-  
+
+  // Edit Terms Modal State
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [editPayout, setEditPayout] = useState('');
+  const [editInterest, setEditInterest] = useState('');
+  const [editTotal, setEditTotal] = useState('');
+  const [editCollection, setEditCollection] = useState('');
+  const [editFrequency, setEditFrequency] = useState<'daily' | 'every_3_days' | 'weekly' | 'monthly'>('daily');
+  const [editDuration, setEditDuration] = useState('50');
+  const [editNextDueDate, setEditNextDueDate] = useState('');
+  const [editError, setEditError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
   if (!customer) {
     return (
       <SafeAreaView style={styles.errorContainer} edges={['top', 'bottom']}>
@@ -35,31 +51,143 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
     );
   }
 
-  const hasScheme = Boolean(
-    (customer.schemeId && customer.schemeId.trim() !== '') ||
-    (customer.enrolledSchemes && customer.enrolledSchemes.length > 0)
-  );
-  const scheme = hasScheme ? schemes.find((s) => s.id === customer.schemeId) : null;
-  const enrolledSnapshot = hasScheme
-    ? (customer.enrolledSchemes?.find((es) => es.schemeId === customer.schemeId)
-      || customer.enrolledSchemes?.[customer.enrolledSchemes.length - 1])
-    : null;
-  const schemeName = hasScheme ? (enrolledSnapshot?.schemeName || scheme?.name || 'Chit Scheme') : 'No Scheme Enrolled Yet';
-  const schemeValue = enrolledSnapshot?.totalAmount || customer.amountGiven || 0;
-  const interestAmount = enrolledSnapshot?.interestAmount ?? scheme?.interestAmount ?? 0;
-  const payoutAmount = enrolledSnapshot?.payoutAmount ?? (scheme?.payoutAmount ?? Math.max(0, schemeValue - interestAmount));
+  const totalValue = customer.totalAmount || customer.amountGiven || 0;
+  const interestAmt = customer.interestAmount ?? Math.max(0, totalValue - (customer.payoutAmount || 0));
+  const payoutAmt = customer.payoutAmount ?? Math.max(0, totalValue - interestAmt);
+  const interestRate = customer.interestRate ?? (payoutAmt > 0 ? (interestAmt / payoutAmt) * 100 : 0);
 
   const stats = getCustomerStats(customerId);
   const customerPayments = payments.filter((p) => p.customerId === customerId);
   const statusInfo = getPaymentStatusInfo(customer.nextPaymentDate, stats.remainingAmount, customer.frequency);
-  const isOverdue = hasScheme && statusInfo.isOverdue;
+  const isOverdue = statusInfo.isOverdue;
+
+  const handleOpenEditModal = () => {
+    setEditPayout(payoutAmt.toString());
+    setEditInterest(interestAmt.toString());
+    setEditTotal(totalValue.toString());
+    setEditCollection(customer.collectionAmount.toString());
+    setEditFrequency(customer.frequency);
+    setEditDuration((customer.durationInstallments || 50).toString());
+    setEditNextDueDate(customer.nextPaymentDate ? customer.nextPaymentDate.split('T')[0] : '');
+    setEditError('');
+    setIsEditModalVisible(true);
+  };
+
+  const computeEditCycles = (repayment: number, installment: number): string => {
+    if (repayment > 0 && installment > 0) {
+      const cycles = Math.ceil(repayment / installment);
+      return cycles > 0 ? cycles.toString() : '';
+    }
+    return '';
+  };
+
+  const handleEditPayoutChange = (val: string) => {
+    setEditPayout(val);
+    const p = parseFloat(val) || 0;
+    const i = parseFloat(editInterest) || 0;
+    const tot = p + i;
+    setEditTotal(tot > 0 ? tot.toString() : '');
+    const col = parseFloat(editCollection) || 0;
+    if (col > 0 && tot > 0) {
+      setEditDuration(computeEditCycles(tot, col));
+    }
+  };
+
+  const handleEditInterestChange = (val: string) => {
+    setEditInterest(val);
+    const p = parseFloat(editPayout) || 0;
+    const i = parseFloat(val) || 0;
+    const tot = p + i;
+    setEditTotal(tot > 0 ? tot.toString() : '');
+    const col = parseFloat(editCollection) || 0;
+    if (col > 0 && tot > 0) {
+      setEditDuration(computeEditCycles(tot, col));
+    }
+  };
+
+  const handleEditTotalChange = (val: string) => {
+    setEditTotal(val);
+    const tot = parseFloat(val) || 0;
+    const p = parseFloat(editPayout) || 0;
+    if (tot >= p && p > 0) {
+      setEditInterest((tot - p).toString());
+    }
+    const col = parseFloat(editCollection) || 0;
+    if (col > 0 && tot > 0) {
+      setEditDuration(computeEditCycles(tot, col));
+    }
+  };
+
+  const handleEditCollectionChange = (val: string) => {
+    setEditCollection(val);
+    const col = parseFloat(val) || 0;
+    const tot = parseFloat(editTotal) || 0;
+    if (col > 0 && tot > 0) {
+      setEditDuration(computeEditCycles(tot, col));
+    }
+  };
+
+  const handleEditDurationChange = (val: string) => {
+    setEditDuration(val);
+    const dur = parseInt(val, 10) || 0;
+    const tot = parseFloat(editTotal) || 0;
+    if (dur > 0 && tot > 0) {
+      setEditCollection(Math.round(tot / dur).toString());
+    }
+  };
+
+  const handleSaveTerms = async () => {
+    const pAmt = parseFloat(editPayout);
+    const iAmt = parseFloat(editInterest) || 0;
+    const totAmt = parseFloat(editTotal) || (pAmt + iAmt);
+    const colAmt = parseFloat(editCollection);
+    const dur = parseInt(editDuration, 10) || 50;
+
+    if (isNaN(pAmt) || pAmt < 0) {
+      setEditError('Please enter a valid payout amount');
+      return;
+    }
+    if (isNaN(totAmt) || totAmt <= 0) {
+      setEditError('Please enter a valid total repayment amount');
+      return;
+    }
+    if (isNaN(colAmt) || colAmt <= 0) {
+      setEditError('Please enter a valid installment collection amount');
+      return;
+    }
+
+    setIsSaving(true);
+    setEditError('');
+
+    const res = await updateCustomerTerms(customer.id, {
+      payoutAmount: pAmt,
+      interestAmount: iAmt,
+      interestRate: pAmt > 0 ? (iAmt / pAmt) * 100 : 0,
+      totalAmount: totAmt,
+      collectionAmount: colAmt,
+      frequency: editFrequency,
+      durationInstallments: dur,
+      nextPaymentDate: editNextDueDate ? new Date(editNextDueDate).toISOString() : undefined,
+    });
+
+    setIsSaving(false);
+
+    if (res.success) {
+      setIsEditModalVisible(false);
+      Alert.alert('Terms Updated ✓', `Lending and collection terms for ${customer.name} have been updated successfully.`);
+    } else {
+      setEditError(res.error || 'Failed to update customer terms');
+    }
+  };
 
   const handleSendMessage = () => {
     let defaultMsg = '';
     if (isOverdue) {
-      defaultMsg = `Dear ${customer.name}, this is an urgent reminder from ChitFlow. Your chit installment of ₹${customer.collectionAmount.toLocaleString('en-IN')} for "${schemeName}" is OVERDUE (${statusInfo.statusText}). Please settle your payment immediately. Thank you!`;
+      defaultMsg = `Dear ${customer.name} (ID: ${customer.id}), this is an urgent reminder from ChitFlow. Your installment of ₹${customer.collectionAmount.toLocaleString('en-IN')} is OVERDUE (${statusInfo.statusText}). Remaining Balance: ₹${stats.remainingAmount.toLocaleString('en-IN')}. Please settle your payment immediately. Thank you!`;
+    } else if (statusInfo.status === 'DUE_TODAY') {
+      defaultMsg = `Dear ${customer.name} (ID: ${customer.id}), this is a reminder from ChitFlow. Your installment of ₹${customer.collectionAmount.toLocaleString('en-IN')} is due TODAY. Remaining Balance: ₹${stats.remainingAmount.toLocaleString('en-IN')}. Thank you!`;
     } else {
-      defaultMsg = `Dear ${customer.name}, this is a reminder from ChitFlow. Your chit installment of ₹${customer.collectionAmount.toLocaleString('en-IN')} for "${schemeName}" is due on ${statusInfo.formattedDueDate}. Thank you!`;
+      defaultMsg = `Dear ${customer.name} (ID: ${customer.id}), this is a notification from ChitFlow. Your next installment of ₹${customer.collectionAmount.toLocaleString('en-IN')} is due on ${statusInfo.formattedDueDate}. Remaining Balance: ₹${stats.remainingAmount.toLocaleString('en-IN')}. Thank you!`;
     }
 
     Alert.alert(
@@ -109,6 +237,9 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
         <View style={styles.headerInfo}>
           <View style={styles.headerNameRow}>
             <Text style={styles.headerTitle}>{customer.name}</Text>
+            <View style={styles.custIdBadge}>
+              <Text style={styles.custIdBadgeText}>{customer.id}</Text>
+            </View>
             <StatusBadge status={statusInfo.badgeLabel} />
           </View>
           <Text style={styles.headerSubtitle}>
@@ -133,10 +264,10 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
 
         {/* Remaining Balance Hero Card */}
         <Card style={styles.heroCard}>
-          <Text style={styles.heroLabel}>REMAINING BALANCE</Text>
+          <Text style={styles.heroLabel}>REMAINING REPAYMENT BALANCE</Text>
           <Text style={styles.heroAmount}>₹{stats.remainingAmount.toLocaleString('en-IN')}</Text>
           <Text style={styles.heroSubText}>
-            of ₹{customer.amountGiven.toLocaleString('en-IN')} total scheme value
+            of ₹{totalValue.toLocaleString('en-IN')} total repayment obligation
           </Text>
 
           <View style={styles.dividerLight} />
@@ -148,7 +279,7 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
               <Text style={styles.progressVal}>₹{stats.paidAmount.toLocaleString('en-IN')}</Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
-              <Text style={styles.progressLabel}>PAYMENTS MADE</Text>
+              <Text style={styles.progressLabel}>COLLECTIONS RECORDED</Text>
               <Text style={styles.progressVal}>{stats.totalPayments} payments</Text>
             </View>
           </View>
@@ -157,60 +288,61 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
           </View>
         </Card>
 
-        {/* Scheme & Payment Terms Card */}
-        <Text style={styles.sectionTitle}>Collection Scheme & Payout Details</Text>
-        {!hasScheme ? (
-          <Card style={styles.infoCard}>
-            <View style={{ alignItems: 'center', paddingVertical: SPACING.md }}>
-              <Text style={{ fontSize: 28, marginBottom: SPACING.xs }}>🪙</Text>
-              <Text style={styles.emptyContractTitle}>No Scheme Enrolled Yet</Text>
-              <Text style={styles.emptyContractText}>
-                This member registered on the portal but has not availed any chit scheme yet. Once they complete their profile and choose a scheme, the contract terms will appear here.
-              </Text>
-            </View>
-          </Card>
-        ) : (
-          <Card style={styles.infoCard}>
-            <View style={styles.lockedContractBadge}>
-              <Text style={styles.lockedContractIcon}>🔒</Text>
-              <View style={{ flex: 1, marginLeft: SPACING.xs }}>
-                <Text style={styles.lockedContractTitle}>PERMANENT ENROLLED CONTRACT</Text>
-                <Text style={styles.lockedContractSub}>
-                  Agreed at enrollment ({formatDateShort(enrolledSnapshot?.enrolledAt || customer.startDate)}) · Terms locked forever
-                </Text>
-              </View>
-            </View>
+        {/* Lending Terms & Collection Card */}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Lending & Collection Terms</Text>
+          <TouchableOpacity
+            style={styles.editTermsBtn}
+            onPress={handleOpenEditModal}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.editTermsBtnText}>✏️ Edit Terms</Text>
+          </TouchableOpacity>
+        </View>
 
+        <Card style={styles.infoCard}>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Chit Scheme</Text>
-            <Text style={styles.infoValue}>{schemeName}</Text>
+            <Text style={styles.infoLabel}>Customer ID (Login ID)</Text>
+            <Text style={[styles.infoValue, { color: COLORS.secondary, fontWeight: '700' }]}>
+              {customer.id}
+            </Text>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Total Scheme Value</Text>
-            <Text style={styles.infoValue}>₹{schemeValue.toLocaleString('en-IN')}</Text>
+          <View style={[styles.infoRow, styles.payoutRow]}>
+            <Text style={styles.payoutRowLabel}>Disbursed Principal Payout</Text>
+            <Text style={styles.payoutRowValue}>
+              ₹{payoutAmt.toLocaleString('en-IN')}
+            </Text>
           </View>
-          {interestAmount > 0 ? (
+          {interestAmt > 0 ? (
             <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Upfront Interest Deducted</Text>
+              <Text style={styles.infoLabel}>Interest Charged</Text>
               <Text style={[styles.infoValue, { color: '#D97706' }]}>
-                - ₹{interestAmount.toLocaleString('en-IN')} ({((interestAmount / schemeValue) * 100).toFixed(1)}% rate)
+                ₹{interestAmt.toLocaleString('en-IN')} ({interestRate.toFixed(1)}%)
               </Text>
             </View>
           ) : null}
-          <View style={[styles.infoRow, styles.payoutRow]}>
-            <Text style={styles.payoutRowLabel}>Net Disbursed Payout (Received)</Text>
-            <Text style={styles.payoutRowValue}>
-              ₹{payoutAmount.toLocaleString('en-IN')}
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Total Repayment Value</Text>
+            <Text style={[styles.infoValue, { fontWeight: '700' }]}>
+              ₹{totalValue.toLocaleString('en-IN')}
             </Text>
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Installment Amount</Text>
-            <Text style={styles.infoValue}>₹{customer.collectionAmount.toLocaleString('en-IN')}</Text>
+            <Text style={styles.infoLabel}>Collection Installment</Text>
+            <Text style={styles.infoValue}>
+              ₹{customer.collectionAmount.toLocaleString('en-IN')}
+            </Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Frequency</Text>
             <Text style={[styles.infoValue, { textTransform: 'capitalize' }]}>
               {formatFrequency(customer.frequency)}
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Total Installment Cycles</Text>
+            <Text style={styles.infoValue}>
+              {customer.durationInstallments || 50} installments
             </Text>
           </View>
           <View style={styles.infoRow}>
@@ -224,42 +356,25 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
             </Text>
           </View>
 
-          {/* Scheme description / explanation note */}
-          <View style={styles.explanationBox}>
-            <Text style={styles.explanationIcon}>ℹ️</Text>
-            <Text style={styles.explanationText}>
-              {scheme?.description ||
-                `Customer receives net ₹${payoutAmount.toLocaleString('en-IN')} upfront after ₹${interestAmount.toLocaleString('en-IN')} interest deduction on the ₹${schemeValue.toLocaleString('en-IN')} scheme value.`}
-              {'\n'}• Terms are permanent for this customer. Any modifications to scheme templates in Admin affect only future new enrollments.
-            </Text>
-          </View>
-
           <TouchableOpacity
             style={[styles.actionBtn, isOverdue && styles.overdueActionBtn]}
             onPress={() => navigation.navigate('Collections', { customerId: customer.id })}
           >
             <Text style={styles.actionBtnText}>
-              {isOverdue ? `Record Overdue Collection (₹${customer.collectionAmount.toLocaleString('en-IN')}) ⚠️` : 'Record Collection / Collect Payment'}
+              {isOverdue
+                ? `Record Overdue Collection (₹${customer.collectionAmount.toLocaleString('en-IN')}) ⚠️`
+                : 'Record Collection / Collect Payment'}
             </Text>
           </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.detailMessageBtn}
-              onPress={() => navigation.navigate('Schemes')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.allSchemesBtnText}>View All Master Scheme Templates →</Text>
-            </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.detailMessageBtn}
             onPress={handleSendMessage}
             activeOpacity={0.8}
           >
-            <Text style={styles.detailMessageBtnText}>💬 Send Payment Reminder Message</Text>
+            <Text style={styles.detailMessageBtnText}>💬 Send Payment Reminder (WhatsApp / SMS)</Text>
           </TouchableOpacity>
         </Card>
-        )}
 
         {/* Customer Profile & Contact Details Card */}
         <Text style={styles.sectionTitle}>Customer Profile & Contact Info</Text>
@@ -267,6 +382,12 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Full Name</Text>
             <Text style={styles.infoValue}>{customer.name}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Customer ID</Text>
+            <Text style={[styles.infoValue, { fontFamily: 'monospace', color: COLORS.secondary }]}>
+              {customer.id}
+            </Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Contact Mobile</Text>
@@ -327,37 +448,19 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
             </Text>
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Government ID Proof</Text>
-            <Text style={[styles.infoValue, !customer.idProofNumber && styles.placeholderValue]}>
-              {customer.idProofType || 'Aadhaar'}: {customer.idProofNumber || 'Not submitted'}
-            </Text>
-          </View>
-          <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Nominee Name</Text>
             <Text style={[styles.infoValue, !customer.nomineeName && styles.placeholderValue]}>
               {customer.nomineeName || 'Not provided'}
             </Text>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Nominee Relationship</Text>
-            <Text style={[styles.infoValue, !customer.nomineeRelation && styles.placeholderValue]}>
-              {customer.nomineeRelation || 'Not provided'}
-            </Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Member Account ID</Text>
-            <Text style={[styles.infoValue, { fontFamily: 'monospace', color: COLORS.secondary }]}>
-              {customer.id.toUpperCase()}
-            </Text>
-          </View>
         </Card>
 
-        {/* Payment History */}
-        <Text style={styles.sectionTitle}>Payment History</Text>
+        {/* Payment History Card */}
+        <Text style={styles.sectionTitle}>Payment & Collection History</Text>
         <Card style={styles.historyCard}>
           {customerPayments.length === 0 ? (
             <View style={styles.emptyHistory}>
-              <Text style={styles.emptyHistoryText}>No payments recorded for this customer yet.</Text>
+              <Text style={styles.emptyHistoryText}>No payments recorded yet</Text>
             </View>
           ) : (
             customerPayments.map((item) => (
@@ -372,6 +475,111 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
           )}
         </Card>
       </ScrollView>
+
+      {/* Edit Lending Terms Modal */}
+      <Modal
+        visible={isEditModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setIsEditModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Lending & Collection Terms</Text>
+              <TouchableOpacity onPress={() => setIsEditModalVisible(false)}>
+                <Text style={styles.modalCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {editError ? <Text style={styles.errorTextBanner}>{editError}</Text> : null}
+
+              <View style={styles.modalTwoCol}>
+                <View style={{ flex: 1, marginRight: SPACING.sm }}>
+                  <FormInput
+                    label="Payout Amount (₹)"
+                    placeholder="e.g. 50000"
+                    value={editPayout}
+                    onChangeText={handleEditPayoutChange}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <FormInput
+                    label="Interest (₹)"
+                    placeholder="e.g. 5000"
+                    value={editInterest}
+                    onChangeText={handleEditInterestChange}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.modalTwoCol}>
+                <View style={{ flex: 1, marginRight: SPACING.sm }}>
+                  <FormInput
+                    label="Total Repayment (₹)"
+                    placeholder="e.g. 55000"
+                    value={editTotal}
+                    onChangeText={handleEditTotalChange}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <FormInput
+                    label="Installment (₹)"
+                    placeholder="e.g. 1100"
+                    value={editCollection}
+                    onChangeText={handleEditCollectionChange}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+
+              <FormInput
+                label="Total Installments / Cycles"
+                placeholder="e.g. 50"
+                value={editDuration}
+                onChangeText={handleEditDurationChange}
+                keyboardType="numeric"
+              />
+
+              <FormInput
+                label="Next Collection Due Date (YYYY-MM-DD)"
+                placeholder="e.g. 2026-09-15"
+                value={editNextDueDate}
+                onChangeText={setEditNextDueDate}
+              />
+
+              {/* Frequency Selection */}
+              <Text style={styles.fieldLabel}>Collection Frequency</Text>
+              <View style={styles.freqContainer}>
+                {(['daily', 'every_3_days', 'weekly', 'monthly'] as const).map((freq) => (
+                  <TouchableOpacity
+                    key={freq}
+                    style={[styles.freqBtn, editFrequency === freq && styles.freqBtnSelected]}
+                    onPress={() => setEditFrequency(freq)}
+                  >
+                    <Text style={[styles.freqBtnText, editFrequency === freq && styles.freqBtnTextSelected]}>
+                      {freq.replace(/_/g, ' ')}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Button
+                title={isSaving ? "Saving Terms..." : "Save Updated Terms"}
+                onPress={handleSaveTerms}
+                style={{ marginTop: SPACING.md }}
+              />
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -379,76 +587,90 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.background,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    backgroundColor: COLORS.primary,
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.md,
     paddingBottom: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   backButton: {
-    paddingVertical: SPACING.sm,
-    paddingRight: SPACING.md,
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 8,
+    marginRight: SPACING.md,
   },
   backButtonText: {
-    ...TYPOGRAPHY.bodyLarge,
+    ...TYPOGRAPHY.bodyMediumBold,
     color: COLORS.white,
-    fontWeight: '600',
   },
   headerInfo: {
-    marginLeft: SPACING.sm,
     flex: 1,
   },
   headerNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
     gap: SPACING.xs + 2,
+    flexWrap: 'wrap',
   },
   headerTitle: {
     ...TYPOGRAPHY.h2,
     color: COLORS.white,
+  },
+  custIdBadge: {
+    backgroundColor: 'rgba(59, 130, 246, 0.25)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  custIdBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#93C5FD',
+    fontSize: 11,
+    fontFamily: 'monospace',
   },
   headerSubtitle: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textLight,
     marginTop: 2,
   },
+  scrollContent: {
+    padding: SPACING.lg,
+  },
   overdueAlertBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEE2E2',
-    borderWidth: 1.5,
-    borderColor: '#EF4444',
-    borderLeftWidth: 6,
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+    borderWidth: 1,
     borderRadius: 12,
     padding: SPACING.md,
-    marginBottom: SPACING.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
   },
   overdueAlertIcon: {
     fontSize: 24,
   },
   overdueAlertTitle: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: '#991B1B',
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
+    color: '#DC2626',
+    marginBottom: 2,
   },
   overdueAlertDesc: {
     ...TYPOGRAPHY.caption,
-    color: '#B91C1C',
-    marginTop: 2,
-  },
-  scrollContent: {
-    padding: SPACING.lg,
-    paddingBottom: 110,
-    backgroundColor: COLORS.background,
-    flexGrow: 1,
+    color: '#991B1B',
+    lineHeight: 16,
   },
   heroCard: {
-    backgroundColor: COLORS.primaryLight,
-    padding: SPACING.lg,
+    backgroundColor: COLORS.primary,
     marginBottom: SPACING.lg,
+    padding: SPACING.lg,
   },
   heroLabel: {
     ...TYPOGRAPHY.captionBold,
@@ -456,90 +678,77 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   heroAmount: {
-    ...TYPOGRAPHY.amountLarge,
+    ...TYPOGRAPHY.hero,
     color: COLORS.white,
-    marginTop: SPACING.sm,
+    marginVertical: SPACING.xs,
   },
   heroSubText: {
-    ...TYPOGRAPHY.caption,
+    ...TYPOGRAPHY.bodySmall,
     color: COLORS.textLight,
-    marginTop: 4,
   },
   dividerLight: {
     height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     marginVertical: SPACING.md,
   },
   progressRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
   },
   progressLabel: {
-    ...TYPOGRAPHY.captionBold,
+    ...TYPOGRAPHY.caption,
     color: COLORS.textLight,
   },
   progressVal: {
-    ...TYPOGRAPHY.bodyMediumBold,
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
     color: COLORS.white,
-    marginTop: 2,
   },
   progressBg: {
     height: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 4,
     overflow: 'hidden',
   },
   progressFg: {
     height: '100%',
-    backgroundColor: COLORS.success,
+    backgroundColor: COLORS.secondary,
     borderRadius: 4,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+    marginTop: SPACING.sm,
   },
   sectionTitle: {
     ...TYPOGRAPHY.h3,
     color: COLORS.primary,
-    marginBottom: SPACING.md,
-    marginTop: SPACING.sm,
   },
-  lockedContractBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+  editTermsBtn: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: SPACING.sm,
+    paddingHorizontal: SPACING.sm + 4,
+    paddingVertical: 5,
     borderRadius: 8,
-    marginBottom: SPACING.sm + 2,
   },
-  lockedContractIcon: {
-    fontSize: 16,
-    marginRight: SPACING.xs,
-  },
-  lockedContractTitle: {
+  editTermsBtnText: {
     ...TYPOGRAPHY.captionBold,
-    color: '#0F172A',
-    fontSize: 11,
-    letterSpacing: 0.5,
-  },
-  lockedContractSub: {
-    ...TYPOGRAPHY.caption,
-    color: '#64748B',
-    fontSize: 10,
-    marginTop: 1,
+    color: '#2563EB',
+    fontSize: 12,
   },
   infoCard: {
     marginBottom: SPACING.lg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  overdueInfoCard: {
-    borderColor: '#FCA5A5',
-    backgroundColor: '#FFF8F8',
+    padding: SPACING.md,
   },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: SPACING.sm + 2,
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
@@ -549,60 +758,36 @@ const styles = StyleSheet.create({
   },
   infoValue: {
     ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.text,
+    color: COLORS.primary,
+  },
+  payoutRow: {
+    backgroundColor: '#EFF6FF',
+    marginHorizontal: -SPACING.md,
+    paddingHorizontal: SPACING.md,
+    borderBottomColor: '#DBEAFE',
+  },
+  payoutRowLabel: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#1D4ED8',
+  },
+  payoutRowValue: {
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '800',
+    color: '#1D4ED8',
   },
   dueDateVal: {
-    color: COLORS.warning,
+    color: COLORS.secondary,
   },
   overdueDueDateVal: {
     color: '#DC2626',
     fontWeight: '700',
-  },
-  payoutRow: {
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: SPACING.sm,
-    borderRadius: 8,
-    marginVertical: 4,
-    borderBottomWidth: 0,
-  },
-  payoutRowLabel: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: '#047857',
-    fontSize: 13,
-  },
-  payoutRowValue: {
-    ...TYPOGRAPHY.amountMedium,
-    color: '#059669',
-    fontSize: 15,
-  },
-  explanationBox: {
-    flexDirection: 'row',
-    backgroundColor: '#F0F9FF',
-    borderWidth: 1,
-    borderColor: '#BAE6FD',
-    borderRadius: 8,
-    padding: SPACING.sm + 2,
-    marginTop: SPACING.md,
-    alignItems: 'flex-start',
-  },
-  explanationIcon: {
-    fontSize: 14,
-    marginRight: 6,
-    marginTop: 1,
-  },
-  explanationText: {
-    ...TYPOGRAPHY.caption,
-    color: '#0369A1',
-    flex: 1,
-    lineHeight: 16,
-    fontSize: 11,
   },
   actionBtn: {
     backgroundColor: COLORS.secondary,
     borderRadius: 12,
     paddingVertical: SPACING.md,
     alignItems: 'center',
-    marginTop: SPACING.lg,
+    marginTop: SPACING.md,
   },
   overdueActionBtn: {
     backgroundColor: '#DC2626',
@@ -624,11 +809,32 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.bodyMediumBold,
     color: '#2563EB',
   },
-  historyCard: {
+  contactActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs + 2,
+  },
+  inlineActionBtn: {
+    backgroundColor: '#EFF6FF',
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  inlineActionText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#2563EB',
+    fontSize: 10,
+  },
+  placeholderValue: {
+    color: COLORS.textLight,
+    fontStyle: 'italic',
+    fontWeight: 'normal',
+  },
+  historyCard: {
     paddingHorizontal: SPACING.md,
-    paddingVertical: 0, // padding handled inside transaction row
+    paddingVertical: 0,
     marginBottom: SPACING.xl,
   },
   emptyHistory: {
@@ -661,45 +867,78 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.bodyMediumBold,
     color: COLORS.white,
   },
-  contactActionRow: {
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: SPACING.lg,
+    maxHeight: '90%',
+  },
+  modalHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: SPACING.xs + 2,
+    marginBottom: SPACING.md,
   },
-  inlineActionBtn: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  inlineActionText: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#2563EB',
-    fontSize: 10,
-  },
-  placeholderValue: {
-    color: COLORS.textLight,
-    fontStyle: 'italic',
-    fontWeight: 'normal',
-  },
-  allSchemesBtnText: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.secondary,
-  },
-  emptyContractTitle: {
-    ...TYPOGRAPHY.bodyLarge,
-    fontWeight: '700',
+  modalTitle: {
+    ...TYPOGRAPHY.h3,
     color: COLORS.primary,
-    marginBottom: 4,
   },
-  emptyContractText: {
-    ...TYPOGRAPHY.bodyMedium,
+  modalCloseText: {
+    fontSize: 20,
     color: COLORS.textMuted,
-    textAlign: 'center',
-    lineHeight: 20,
-    maxWidth: 380,
+    padding: 4,
+  },
+  modalTwoCol: {
+    flexDirection: 'row',
+  },
+  errorTextBanner: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.danger,
+    backgroundColor: '#FEF2F2',
+    padding: SPACING.sm,
+    borderRadius: 8,
+    marginBottom: SPACING.sm,
+  },
+  fieldLabel: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textMuted,
+    marginBottom: SPACING.xs,
+  },
+  freqContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  freqBtn: {
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.sm + 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexGrow: 1,
+  },
+  freqBtnSelected: {
+    backgroundColor: COLORS.secondary,
+    borderColor: COLORS.secondary,
+  },
+  freqBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textMuted,
+    textTransform: 'capitalize',
+  },
+  freqBtnTextSelected: {
+    color: COLORS.white,
   },
 });
 

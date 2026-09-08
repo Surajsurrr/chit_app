@@ -61,6 +61,9 @@ export interface CustomerStats {
   remainingAmount: number;
   totalPayments: number;
   progressPercentage: number;
+  payoutAmount: number;
+  interestAmount: number;
+  totalAmount: number;
 }
 
 export interface ChitDataContextType {
@@ -86,7 +89,21 @@ export interface ChitDataContextType {
   // Actions
   switchRole: (role: UserRole) => void;
   selectCustomer: (id: string) => void;
-  addCustomer: (customer: Omit<Customer, 'id' | 'nextPaymentDate'>) => Promise<{ success: boolean; customerId?: string; error?: string }>;
+  addCustomer: (customer: Omit<Customer, 'id' | 'nextPaymentDate'> & { id?: string }) => Promise<{ success: boolean; customerId?: string; error?: string }>;
+  updateCustomerTerms: (
+    customerId: string,
+    terms: {
+      payoutAmount?: number;
+      interestAmount?: number;
+      interestRate?: number;
+      totalAmount?: number;
+      collectionAmount?: number;
+      frequency?: 'daily' | 'weekly' | 'every_3_days' | 'monthly';
+      durationInstallments?: number;
+      startDate?: string;
+      nextPaymentDate?: string;
+    }
+  ) => Promise<{ success: boolean; error?: string }>;
   addScheme: (scheme: Omit<Scheme, 'id' | 'startDate' | 'status'>) => Promise<void>;
   updateScheme: (
     schemeId: string,
@@ -113,7 +130,7 @@ export interface ChitDataContextType {
   
   // Auth & Registration methods
   loginAsAdmin: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  loginAsCustomer: (phone: string, pin: string) => Promise<{ success: boolean; error?: string }>;
+  loginAsCustomer: (identifier: string, pin: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   registerAdmin: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   registerCustomer: (
@@ -276,40 +293,47 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
-  const addCustomer = async (
-    newCustomerData: Omit<Customer, 'id' | 'nextPaymentDate'>
-  ): Promise<{ success: boolean; customerId?: string; error?: string }> => {
-    const newId = `cust-${Date.now()}`;
-    const hasScheme = Boolean(newCustomerData.schemeId && newCustomerData.schemeId.trim() !== '');
-    const scheme = hasScheme ? schemes.find((s) => s.id === newCustomerData.schemeId) : null;
-    const interest = scheme?.interestAmount ?? 0;
-    const payout = scheme?.payoutAmount ?? Math.max(0, newCustomerData.amountGiven - interest);
+  const generateNextCustomerId = (): string => {
+    let maxNum = 100;
+    customers.forEach((c) => {
+      const match = c.id.match(/^CUST-(\d+)$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+    return `CUST-${maxNum + 1}`;
+  };
 
-    const enrolledSnapshot: EnrolledScheme | null =
-      hasScheme && scheme
-        ? {
-            schemeId: newCustomerData.schemeId,
-            schemeName: scheme.name,
-            totalAmount: newCustomerData.amountGiven,
-            interestAmount: interest,
-            payoutAmount: payout,
-            collectionAmount: newCustomerData.collectionAmount,
-            frequency: newCustomerData.frequency,
-            durationWeeksOrMonths: scheme.durationWeeksOrMonths || 10,
-            enrolledAt: new Date().toISOString(),
-          }
-        : null;
+  const addCustomer = async (
+    newCustomerData: Omit<Customer, 'id' | 'nextPaymentDate'> & { id?: string }
+  ): Promise<{ success: boolean; customerId?: string; error?: string }> => {
+    const newId = (newCustomerData.id && newCustomerData.id.trim().length > 0)
+      ? newCustomerData.id.trim().toUpperCase()
+      : generateNextCustomerId();
+
+    const payout = newCustomerData.payoutAmount ?? Math.max(0, (newCustomerData.amountGiven || 0) - (newCustomerData.interestAmount || 0));
+    const interest = newCustomerData.interestAmount ?? Math.max(0, (newCustomerData.amountGiven || 0) - payout);
+    const total = newCustomerData.totalAmount || (payout + interest) || newCustomerData.amountGiven || 0;
+    const colAmt = newCustomerData.collectionAmount || 0;
+    const dur = newCustomerData.durationInstallments || (colAmt > 0 && total > 0 ? Math.ceil(total / colAmt) : 50);
+    const intRate = newCustomerData.interestRate ?? (payout > 0 ? (interest / payout) * 100 : 0);
 
     const newCustomer: Customer = {
       ...newCustomerData,
       id: newId,
-      schemeId: hasScheme ? newCustomerData.schemeId : '',
-      amountGiven: hasScheme ? newCustomerData.amountGiven : 0,
-      collectionAmount: hasScheme ? newCustomerData.collectionAmount : 0,
+      payoutAmount: payout,
+      interestAmount: interest,
+      interestRate: intRate,
+      totalAmount: total,
+      amountGiven: total,
+      collectionAmount: colAmt,
+      durationInstallments: dur,
+      schemeId: '',
       // For a new customer, next payment date is initial startDate
-      nextPaymentDate: newCustomerData.startDate,
-      enrolledSchemeIds: enrolledSnapshot ? [newCustomerData.schemeId] : [],
-      enrolledSchemes: enrolledSnapshot ? [enrolledSnapshot] : [],
+      nextPaymentDate: newCustomerData.startDate || new Date().toISOString(),
+      enrolledSchemeIds: [],
+      enrolledSchemes: [],
     };
 
     const res = await dbService.registerCustomer(newCustomer);
@@ -320,6 +344,58 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const updated = [newCustomer, ...customers];
     setCustomers(updated);
     return { success: true, customerId: newId };
+  };
+
+  const updateCustomerTerms = async (
+    customerId: string,
+    terms: {
+      payoutAmount?: number;
+      interestAmount?: number;
+      interestRate?: number;
+      totalAmount?: number;
+      collectionAmount?: number;
+      frequency?: 'daily' | 'weekly' | 'every_3_days' | 'monthly';
+      durationInstallments?: number;
+      startDate?: string;
+      nextPaymentDate?: string;
+    }
+  ): Promise<{ success: boolean; error?: string }> => {
+    const target = customers.find((c) => c.id === customerId);
+    if (!target) {
+      return { success: false, error: 'Customer record not found' };
+    }
+
+    const payout = terms.payoutAmount ?? target.payoutAmount ?? 0;
+    const interest = terms.interestAmount ?? target.interestAmount ?? 0;
+    const total = terms.totalAmount ?? (payout + interest);
+    const colAmt = terms.collectionAmount ?? target.collectionAmount ?? 0;
+    const freq = terms.frequency ?? target.frequency ?? 'daily';
+    const dur = terms.durationInstallments ?? target.durationInstallments ?? (colAmt > 0 && total > 0 ? Math.ceil(total / colAmt) : 50);
+    const intRate = terms.interestRate ?? (payout > 0 ? (interest / payout) * 100 : target.interestRate || 0);
+
+    const updates: Partial<Customer> = {
+      payoutAmount: payout,
+      interestAmount: interest,
+      interestRate: intRate,
+      totalAmount: total,
+      amountGiven: total,
+      collectionAmount: colAmt,
+      frequency: freq,
+      durationInstallments: dur,
+      ...(terms.startDate ? { startDate: terms.startDate } : {}),
+      ...(terms.nextPaymentDate ? { nextPaymentDate: terms.nextPaymentDate } : {}),
+    };
+
+    const res = await dbService.updateCustomer(customerId, updates);
+    if (!res.success) {
+      return res;
+    }
+
+    setCustomers((prev) =>
+      prev.map((c) => (c.id === customerId ? { ...c, ...updates } : c))
+    );
+
+    return { success: true };
   };
 
   const addScheme = async (newSchemeData: Omit<Scheme, 'id' | 'startDate' | 'status'>): Promise<void> => {
@@ -658,16 +734,16 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const loginAsCustomer = async (
-    phone: string,
+    identifier: string,
     pin: string
   ): Promise<{ success: boolean; error?: string }> => {
-    const cleanPhone = phone.trim();
-    const res = await dbService.loginCustomer(cleanPhone, pin);
+    const cleanId = identifier.trim();
+    const res = await dbService.loginCustomer(cleanId, pin);
 
     if (!res.success || !res.customer) {
       return {
         success: false,
-        error: res.error || 'Authentication failed. Please verify phone and 4-digit PIN.',
+        error: res.error || 'Authentication failed. Please verify Customer ID / Phone and 4-digit PIN.',
       };
     }
 
@@ -766,32 +842,21 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     phone: string,
     pin: string,
     schemeId?: string
-  ): Promise<{ success: boolean; error?: string }> => {
-    const selectedScheme = schemeId ? schemes.find((s) => s.id === schemeId) : null;
-
-    if (selectedScheme) {
-      return await addCustomer({
-        name: name.trim(),
-        phone: phone.trim(),
-        pin: pin.trim(),
-        schemeId: selectedScheme.id,
-        amountGiven: selectedScheme.totalAmount,
-        collectionAmount: selectedScheme.collectionAmount,
-        frequency: selectedScheme.frequency,
-        startDate: new Date().toISOString(),
-      });
-    } else {
-      return await addCustomer({
-        name: name.trim(),
-        phone: phone.trim(),
-        pin: pin.trim(),
-        schemeId: '',
-        amountGiven: 0,
-        collectionAmount: 0,
-        frequency: 'monthly',
-        startDate: new Date().toISOString(),
-      });
-    }
+  ): Promise<{ success: boolean; customerId?: string; error?: string }> => {
+    return await addCustomer({
+      name: name.trim(),
+      phone: phone.trim(),
+      pin: pin.trim(),
+      payoutAmount: 0,
+      interestAmount: 0,
+      interestRate: 0,
+      totalAmount: 0,
+      amountGiven: 0,
+      collectionAmount: 0,
+      durationInstallments: 50,
+      frequency: 'daily',
+      startDate: new Date().toISOString(),
+    });
   };
 
   const logout = () => {
@@ -816,20 +881,35 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const getCustomerStats = (customerId: string): CustomerStats => {
     const customer = customers.find((c) => c.id === customerId);
     if (!customer) {
-      return { paidAmount: 0, remainingAmount: 0, totalPayments: 0, progressPercentage: 0 };
+      return {
+        paidAmount: 0,
+        remainingAmount: 0,
+        totalPayments: 0,
+        progressPercentage: 0,
+        payoutAmount: 0,
+        interestAmount: 0,
+        totalAmount: 0,
+      };
     }
+
+    const totalDue = customer.totalAmount || customer.amountGiven || 0;
+    const payout = customer.payoutAmount ?? (totalDue - (customer.interestAmount || 0));
+    const interest = customer.interestAmount ?? (totalDue - payout);
 
     const customerPayments = payments.filter((p) => p.customerId === customerId);
     const paidAmount = customerPayments.reduce((sum, p) => sum + p.amount, 0);
-    const remainingAmount = Math.max(0, customer.amountGiven - paidAmount);
+    const remainingAmount = Math.max(0, totalDue - paidAmount);
     const totalPayments = customerPayments.length;
-    const progressPercentage = customer.amountGiven > 0 ? (paidAmount / customer.amountGiven) * 100 : 0;
+    const progressPercentage = totalDue > 0 ? (paidAmount / totalDue) * 100 : 0;
 
     return {
       paidAmount,
       remainingAmount,
       totalPayments,
       progressPercentage,
+      payoutAmount: payout,
+      interestAmount: interest,
+      totalAmount: totalDue,
     };
   };
 
@@ -884,6 +964,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         switchRole,
         selectCustomer,
         addCustomer,
+        updateCustomerTerms,
         addScheme,
         updateScheme,
         updateCustomerScheme,

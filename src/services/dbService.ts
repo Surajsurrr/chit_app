@@ -41,15 +41,26 @@ function mapAdminFromRow(row: any): AdminCredentials {
 }
 
 function mapCustomerFromRow(row: any): Customer {
+  const snapshot = Array.isArray(row.enrolled_schemes) && row.enrolled_schemes.length > 0 ? row.enrolled_schemes[0] : null;
+  const totalAmt = Number(row.total_amount || snapshot?.totalAmount || row.amount_given || 0);
+  const payoutAmt = Number(row.payout_amount || snapshot?.payoutAmount || 0);
+  const interestAmt = Number(row.interest_amount || snapshot?.interestAmount || 0);
+  const dur = Number(row.duration_installments || snapshot?.durationWeeksOrMonths || snapshot?.durationInstallments || 50);
+  const intRate = Number(row.interest_rate || snapshot?.interestRate || (payoutAmt > 0 ? (interestAmt / payoutAmt) * 100 : 0));
   return {
     id: row.id,
     name: row.name,
     phone: row.phone,
     pin: row.pin,
     schemeId: row.scheme_id || '',
-    amountGiven: Number(row.amount_given || 0),
-    collectionAmount: Number(row.collection_amount || 0),
-    frequency: row.frequency || 'monthly',
+    amountGiven: totalAmt,
+    totalAmount: totalAmt,
+    payoutAmount: payoutAmt || Math.max(0, totalAmt - interestAmt),
+    interestAmount: interestAmt,
+    interestRate: intRate,
+    collectionAmount: Number(row.collection_amount || snapshot?.collectionAmount || 0),
+    durationInstallments: dur,
+    frequency: row.frequency || snapshot?.frequency || 'monthly',
     startDate: row.start_date || new Date().toISOString(),
     nextPaymentDate: row.next_payment_date || new Date().toISOString(),
     email: row.email || '',
@@ -276,25 +287,41 @@ export const dbService = {
   async registerCustomer(customer: Customer): Promise<{ success: boolean; error?: string }> {
     if (this.isLive()) {
       try {
-        // Check phone uniqueness
+        // Check phone uniqueness with maybeSingle
         const { data: existing } = await supabase
           .from('customers')
           .select('id')
           .eq('phone', customer.phone.trim())
-          .single();
+          .maybeSingle();
 
         if (existing) {
           return { success: false, error: 'Phone number is already registered in central database' };
         }
 
-        const { error } = await supabase.from('customers').insert({
+        const totAmt = customer.totalAmount || customer.amountGiven || 0;
+        const snapshot = {
+          totalAmount: totAmt,
+          payoutAmount: customer.payoutAmount || 0,
+          interestAmount: customer.interestAmount || 0,
+          interestRate: customer.interestRate || 0,
+          durationInstallments: customer.durationInstallments || 50,
+          collectionAmount: customer.collectionAmount || 0,
+          frequency: customer.frequency || 'daily',
+        };
+
+        const payloadWithAllCols: any = {
           id: customer.id,
           name: customer.name.trim(),
           phone: customer.phone.trim(),
           pin: customer.pin.trim(),
           scheme_id: customer.schemeId || '',
-          amount_given: customer.amountGiven || 0,
+          amount_given: totAmt,
+          total_amount: totAmt,
+          payout_amount: customer.payoutAmount || 0,
+          interest_amount: customer.interestAmount || 0,
+          interest_rate: customer.interestRate || 0,
           collection_amount: customer.collectionAmount || 0,
+          duration_installments: customer.durationInstallments || 50,
           frequency: customer.frequency || 'monthly',
           start_date: customer.startDate || new Date().toISOString(),
           next_payment_date: customer.nextPaymentDate || null,
@@ -308,8 +335,24 @@ export const dbService = {
           id_proof_type: customer.idProofType || 'Aadhaar',
           id_proof_number: customer.idProofNumber || '',
           enrolled_scheme_ids: customer.enrolledSchemeIds || [],
-          enrolled_schemes: customer.enrolledSchemes || [],
-        });
+          enrolled_schemes: customer.enrolledSchemes?.length ? customer.enrolledSchemes : [snapshot],
+        };
+
+        let { error } = await supabase.from('customers').insert(payloadWithAllCols);
+
+        // If the Supabase database table hasn't run the ALTER TABLE migrations yet (PGRST204),
+        // fallback gracefully by removing the new columns and persisting them inside enrolled_schemes JSONB!
+        if (error && error.code === 'PGRST204') {
+          console.warn('Supabase customers table lacks migration columns, falling back to standard columns + enrolled_schemes:', error.message);
+          const fallbackPayload: any = { ...payloadWithAllCols };
+          delete fallbackPayload.total_amount;
+          delete fallbackPayload.payout_amount;
+          delete fallbackPayload.interest_amount;
+          delete fallbackPayload.interest_rate;
+          delete fallbackPayload.duration_installments;
+          const retry = await supabase.from('customers').insert(fallbackPayload);
+          error = retry.error;
+        }
 
         if (error) throw error;
         await this.fetchCustomers();
@@ -330,20 +373,21 @@ export const dbService = {
   },
 
   async loginCustomer(
-    phone: string,
+    identifier: string,
     pin: string
   ): Promise<{ success: boolean; customer?: Customer; error?: string }> {
-    const cleanPhone = phone.trim();
+    const cleanId = identifier.trim();
     if (this.isLive()) {
       try {
+        // Query by Customer ID (id) OR Phone number
         const { data, error } = await supabase
           .from('customers')
           .select('*')
-          .eq('phone', cleanPhone)
-          .single();
+          .or(`phone.eq.${cleanId},id.ilike.${cleanId}`)
+          .maybeSingle();
 
         if (error || !data) {
-          return { success: false, error: 'Phone number not found in centralized database' };
+          return { success: false, error: 'Customer ID or Phone number not found in database' };
         }
 
         if (data.pin !== pin.trim()) {
@@ -357,9 +401,13 @@ export const dbService = {
     }
 
     const customers = await this.fetchCustomers();
-    const found = customers.find((c) => c.phone.trim() === cleanPhone);
+    const found = customers.find(
+      (c) =>
+        c.phone.trim() === cleanId ||
+        c.id.toLowerCase() === cleanId.toLowerCase()
+    );
     if (!found) {
-      return { success: false, error: 'Phone number not found' };
+      return { success: false, error: 'Customer ID or Phone number not found' };
     }
     if (found.pin !== pin.trim()) {
       return { success: false, error: 'Incorrect 4-digit PIN' };
@@ -375,8 +423,18 @@ export const dbService = {
         if (updatedData.phone !== undefined) rowUpdates.phone = updatedData.phone;
         if (updatedData.pin !== undefined) rowUpdates.pin = updatedData.pin;
         if (updatedData.schemeId !== undefined) rowUpdates.scheme_id = updatedData.schemeId;
-        if (updatedData.amountGiven !== undefined) rowUpdates.amount_given = updatedData.amountGiven;
+        if (updatedData.totalAmount !== undefined) {
+          rowUpdates.total_amount = updatedData.totalAmount;
+          rowUpdates.amount_given = updatedData.totalAmount;
+        } else if (updatedData.amountGiven !== undefined) {
+          rowUpdates.total_amount = updatedData.amountGiven;
+          rowUpdates.amount_given = updatedData.amountGiven;
+        }
+        if (updatedData.payoutAmount !== undefined) rowUpdates.payout_amount = updatedData.payoutAmount;
+        if (updatedData.interestAmount !== undefined) rowUpdates.interest_amount = updatedData.interestAmount;
+        if (updatedData.interestRate !== undefined) rowUpdates.interest_rate = updatedData.interestRate;
         if (updatedData.collectionAmount !== undefined) rowUpdates.collection_amount = updatedData.collectionAmount;
+        if (updatedData.durationInstallments !== undefined) rowUpdates.duration_installments = updatedData.durationInstallments;
         if (updatedData.frequency !== undefined) rowUpdates.frequency = updatedData.frequency;
         if (updatedData.nextPaymentDate !== undefined) rowUpdates.next_payment_date = updatedData.nextPaymentDate;
         if (updatedData.email !== undefined) rowUpdates.email = updatedData.email;
@@ -389,9 +447,40 @@ export const dbService = {
         if (updatedData.idProofType !== undefined) rowUpdates.id_proof_type = updatedData.idProofType;
         if (updatedData.idProofNumber !== undefined) rowUpdates.id_proof_number = updatedData.idProofNumber;
         if (updatedData.enrolledSchemeIds !== undefined) rowUpdates.enrolled_scheme_ids = updatedData.enrolledSchemeIds;
-        if (updatedData.enrolledSchemes !== undefined) rowUpdates.enrolled_schemes = updatedData.enrolledSchemes;
+        // If lending terms are updated, also sync enrolled_schemes snapshot
+        if (
+          updatedData.payoutAmount !== undefined ||
+          updatedData.interestAmount !== undefined ||
+          updatedData.totalAmount !== undefined ||
+          updatedData.collectionAmount !== undefined ||
+          updatedData.durationInstallments !== undefined
+        ) {
+          const snapshot = {
+            totalAmount: updatedData.totalAmount || updatedData.amountGiven,
+            payoutAmount: updatedData.payoutAmount,
+            interestAmount: updatedData.interestAmount,
+            interestRate: updatedData.interestRate,
+            durationInstallments: updatedData.durationInstallments,
+            collectionAmount: updatedData.collectionAmount,
+            frequency: updatedData.frequency,
+          };
+          rowUpdates.enrolled_schemes = [snapshot];
+        }
 
-        const { error } = await supabase.from('customers').update(rowUpdates).eq('id', customerId);
+        let { error } = await supabase.from('customers').update(rowUpdates).eq('id', customerId);
+
+        // Fallback for PGRST204 if columns are not present
+        if (error && error.code === 'PGRST204') {
+          console.warn('Supabase customers table lacks migration columns on update, falling back:', error.message);
+          delete rowUpdates.total_amount;
+          delete rowUpdates.payout_amount;
+          delete rowUpdates.interest_amount;
+          delete rowUpdates.interest_rate;
+          delete rowUpdates.duration_installments;
+          const retry = await supabase.from('customers').update(rowUpdates).eq('id', customerId);
+          error = retry.error;
+        }
+
         if (error) throw error;
         await this.fetchCustomers();
         return { success: true };

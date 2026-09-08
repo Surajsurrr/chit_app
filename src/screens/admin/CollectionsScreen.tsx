@@ -70,9 +70,11 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
   const dueTodayCount = customerDataWithStatus.filter((item) => item.statusInfo.status === 'DUE_TODAY').length;
 
   const filteredItems = customerDataWithStatus.filter(({ customer, statusInfo }) => {
+    const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
-      customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      customer.phone.includes(searchQuery);
+      customer.name.toLowerCase().includes(q) ||
+      customer.phone.includes(q) ||
+      customer.id.toLowerCase().includes(q);
 
     if (!matchesSearch) return false;
 
@@ -123,18 +125,14 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
 
   // Automated Reminder Message Generator & Handlers
   const handleOpenMessage = (cust: Customer, info: PaymentStatusInfo) => {
-    const scheme = schemes.find((s) => s.id === cust.schemeId);
-    const enrolledSnapshot = cust.enrolledSchemes?.find((es) => es.schemeId === cust.schemeId)
-      || cust.enrolledSchemes?.[cust.enrolledSchemes.length - 1];
-    const schemeName = enrolledSnapshot?.schemeName || scheme?.name || 'Chit Scheme';
-    
+    const custStats = getCustomerStats(cust.id);
     let defaultMsg = '';
     if (info.isOverdue) {
-      defaultMsg = `Dear ${cust.name}, this is an urgent reminder from ChitFlow. Your chit installment of ₹${cust.collectionAmount.toLocaleString('en-IN')} for "${schemeName}" is OVERDUE (${info.statusText}). Please settle your payment immediately to avoid account penalties. Thank you!`;
+      defaultMsg = `Dear ${cust.name} (ID: ${cust.id}), this is an urgent reminder from ChitFlow. Your installment of ₹${cust.collectionAmount.toLocaleString('en-IN')} is OVERDUE (${info.statusText}). Remaining balance: ₹${custStats.remainingAmount.toLocaleString('en-IN')}. Please settle your payment immediately. Thank you!`;
     } else if (info.status === 'DUE_TODAY') {
-      defaultMsg = `Dear ${cust.name}, this is a reminder from ChitFlow. Your chit installment of ₹${cust.collectionAmount.toLocaleString('en-IN')} for "${schemeName}" is due TODAY. Kindly pay your due amount. Thank you!`;
+      defaultMsg = `Dear ${cust.name} (ID: ${cust.id}), this is a reminder from ChitFlow. Your installment of ₹${cust.collectionAmount.toLocaleString('en-IN')} is due TODAY. Remaining balance: ₹${custStats.remainingAmount.toLocaleString('en-IN')}. Thank you!`;
     } else {
-      defaultMsg = `Dear ${cust.name}, this is a payment notification from ChitFlow. Your upcoming chit installment of ₹${cust.collectionAmount.toLocaleString('en-IN')} for "${schemeName}" is due on ${info.formattedDueDate}. Thank you!`;
+      defaultMsg = `Dear ${cust.name} (ID: ${cust.id}), this is a notification from ChitFlow. Your upcoming installment of ₹${cust.collectionAmount.toLocaleString('en-IN')} is due on ${info.formattedDueDate}. Remaining balance: ₹${custStats.remainingAmount.toLocaleString('en-IN')}. Thank you!`;
     }
 
     setMessageCustomer(cust);
@@ -235,6 +233,9 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
               <Text style={styles.nameText}>
                 {customer.name}
               </Text>
+              <View style={styles.custIdBadge}>
+                <Text style={styles.custIdBadgeText}>{customer.id}</Text>
+              </View>
               <StatusBadge status={statusInfo.badgeLabel} />
             </View>
             <Text style={styles.frequencyText}>
@@ -748,6 +749,20 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.bodyLarge,
     fontWeight: '700',
     color: COLORS.text,
+  },
+  custIdBadge: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  custIdBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 10,
+    color: '#2563EB',
+    fontFamily: 'monospace',
   },
   overdueNameText: {
     color: '#991B1B',

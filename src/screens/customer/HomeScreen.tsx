@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   StyleSheet,
   Text,
   View,
   ScrollView,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useChitData } from '../../context/ChitDataContext';
@@ -15,8 +14,6 @@ import Button from '../../components/Button';
 import TransactionRow from '../../components/TransactionRow';
 import { formatDateLong, formatDateShort, getPaymentStatusInfo, formatFrequency } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
-import { Scheme } from '../../data/mockData';
-import { AvailSchemeModal } from '../../components/AvailSchemeModal';
 
 export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const {
@@ -24,13 +21,8 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     customers,
     payments,
     receipts,
-    schemes,
     getCustomerStats,
-    updateCustomerScheme,
     logout,
-    isAdminProfileComplete,
-    isCustomerProfileComplete,
-    currentAdmin,
   } = useChitData();
 
   const customer = customers.find((c) => c.id === selectedCustomerId);
@@ -44,80 +36,29 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     );
   }
 
-  const isCustProfileComplete = isCustomerProfileComplete(customer.id);
-  const hasAvailedScheme = Boolean(
-    (customer.schemeId && customer.schemeId.trim() !== '') ||
-    (customer.enrolledSchemes && customer.enrolledSchemes.length > 0)
-  );
-  const scheme = hasAvailedScheme ? schemes.find((s) => s.id === customer.schemeId) : null;
-  const enrolledSnapshot = hasAvailedScheme
-    ? (customer.enrolledSchemes?.find((es) => es.schemeId === customer.schemeId)
-      || customer.enrolledSchemes?.[customer.enrolledSchemes.length - 1])
-    : null;
-  const activeSchemeName = enrolledSnapshot?.schemeName || scheme?.name || 'No Scheme Availed';
-  const activeSchemeValue = enrolledSnapshot?.totalAmount || customer.amountGiven || 0;
-  const activeInterest = enrolledSnapshot?.interestAmount ?? scheme?.interestAmount ?? 0;
-  const activePayout = enrolledSnapshot?.payoutAmount ?? (scheme?.payoutAmount ?? Math.max(0, activeSchemeValue - activeInterest));
+  const totalValue = customer.totalAmount || customer.amountGiven || 0;
+  const interestAmt = customer.interestAmount ?? Math.max(0, totalValue - (customer.payoutAmount || 0));
+  const payoutAmt = customer.payoutAmount ?? Math.max(0, totalValue - interestAmt);
 
   const stats = getCustomerStats(customer.id);
   const customerPayments = payments.filter((p) => p.customerId === customer.id);
-  const recentPayments = customerPayments.slice(0, 3); // top 3
+  const recentPayments = customerPayments.slice(0, 3);
   const latestPayment = customerPayments.length > 0 ? customerPayments[0] : null;
   const latestReceipt = latestPayment
     ? receipts.find((r) => r.paymentId === latestPayment.id || r.id === latestPayment.receiptId)
     : null;
+
   const statusInfo = getPaymentStatusInfo(customer.nextPaymentDate, stats.remainingAmount, customer.frequency);
-  const isOverdue = hasAvailedScheme && statusInfo.isOverdue;
-
-  const [confirmScheme, setConfirmScheme] = useState<Scheme | null>(null);
-  const [isAvailing, setIsAvailing] = useState<boolean>(false);
-  const [availSuccessScheme, setAvailSuccessScheme] = useState<Scheme | null>(null);
-
-  const handleSelectScheme = (selectedScheme: Scheme) => {
-    const sInterest = selectedScheme.interestAmount || 0;
-    const sPayout = selectedScheme.payoutAmount || Math.max(0, selectedScheme.totalAmount - sInterest);
-    const isCurrentActive = hasAvailedScheme &&
-      selectedScheme.id === customer.schemeId &&
-      selectedScheme.totalAmount === activeSchemeValue &&
-      sInterest === activeInterest &&
-      sPayout === activePayout &&
-      selectedScheme.collectionAmount === customer.collectionAmount &&
-      selectedScheme.frequency === customer.frequency;
-
-    if (isCurrentActive) return;
-    setConfirmScheme(selectedScheme);
-  };
-
-  const handleConfirmAvail = async (selectedScheme: Scheme) => {
-    setIsAvailing(true);
-    try {
-      const res = await updateCustomerScheme(customer.id, selectedScheme.id);
-      if (res.success) {
-        setAvailSuccessScheme(selectedScheme);
-      } else {
-        Alert.alert('Unable to Avail Scheme', res.error || 'Failed to update scheme. Please try again.');
-      }
-    } catch (e: any) {
-      Alert.alert('Error', e?.message || 'An unexpected error occurred.');
-    } finally {
-      setIsAvailing(false);
-    }
-  };
-
-  const handleSuccessDone = () => {
-    setConfirmScheme(null);
-    setAvailSuccessScheme(null);
-  };
-
-  const handleLogout = () => {
-    logout();
-  };
+  const isOverdue = statusInfo.isOverdue && stats.remainingAmount > 0;
+  const isDueToday = statusInfo.status === 'DUE_TODAY' && stats.remainingAmount > 0;
+  const isSettled = stats.remainingAmount === 0 && totalValue > 0;
 
   const nameInitials = customer.name
     .split(' ')
     .map((n) => n[0])
     .join('')
-    .toUpperCase();
+    .toUpperCase()
+    .slice(0, 2);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -126,8 +67,13 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       {/* Header */}
       <View style={styles.header}>
         <View style={{ flex: 1, marginRight: SPACING.sm }}>
-          <Text style={styles.welcomeText}>WELCOME BACK</Text>
-          <Text style={styles.customerName} numberOfLines={1}>{customer.name}</Text>
+          <Text style={styles.welcomeText}>MEMBER PORTAL</Text>
+          <View style={styles.headerNameRow}>
+            <Text style={styles.customerName} numberOfLines={1}>{customer.name}</Text>
+            <View style={styles.custIdBadge}>
+              <Text style={styles.custIdBadgeText}>{customer.id}</Text>
+            </View>
+          </View>
         </View>
         <View style={styles.headerRightRow}>
           <TouchableOpacity
@@ -139,7 +85,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerLogoutBtn}
-            onPress={handleLogout}
+            onPress={() => logout()}
             activeOpacity={0.8}
           >
             <Text style={styles.headerLogoutText}>Log Out</Text>
@@ -148,7 +94,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Latest Payment Verified & Invoice Proof Card */}
+        {/* LATEST PAYMENT CREDITED BANNER */}
         {latestPayment && (
           <Card style={styles.latestInvoiceCard}>
             <View style={styles.latestInvoiceHeader}>
@@ -185,246 +131,146 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 activeOpacity={0.8}
               >
                 <Text style={styles.latestInvoiceBtnIcon}>📥</Text>
-                <Text style={styles.latestInvoiceBtnText}>Download Invoice (PDF)</Text>
+                <Text style={styles.latestInvoiceBtnText}>Invoice</Text>
               </TouchableOpacity>
             </View>
           </Card>
         )}
 
-        {/* Next Payment Card or Onboarding Prompt */}
-        {!hasAvailedScheme ? (
-          <Card style={styles.noSchemeHeroCard}>
-            <View style={styles.noSchemeHeroHeader}>
-              <View style={styles.noSchemeHeroBadge}>
-                <Text style={styles.noSchemeHeroBadgeText}>📋 GET STARTED</Text>
+        {/* DUE DATE REMINDER CARDS */}
+        {isOverdue ? (
+          <Card style={styles.overdueDueCard}>
+            <View style={styles.overdueBadgeRow}>
+              <View style={styles.overdueHeaderBadge}>
+                <Text style={styles.overdueHeaderBadgeText}>⚠️ INSTALLMENT OVERDUE</Text>
               </View>
-              <Text style={styles.noSchemeHeroStep}>
-                {!isCustProfileComplete ? 'Step 1: Setup Profile' : 'Step 2: Choose Scheme'}
+              <Text style={styles.overdueDaysNotice}>{statusInfo.statusText}</Text>
+            </View>
+
+            <Text style={styles.dueAmountHeader}>
+              ₹{customer.collectionAmount.toLocaleString('en-IN')}
+            </Text>
+            <Text style={styles.dueDateOverdueText}>
+              Was due on {formatDateLong(customer.nextPaymentDate)}
+            </Text>
+
+            <View style={styles.overdueWarningBox}>
+              <Text style={styles.overdueWarningTitle}>PAYMENT NOTICE</Text>
+              <Text style={styles.overdueWarningDesc}>
+                Your scheduled installment is overdue. Please settle this amount with your administrator or field collector to keep your ledger in good standing.
               </Text>
             </View>
-            <Text style={styles.noSchemeHeroTitle}>No Scheme Availed Yet</Text>
-            <Text style={styles.noSchemeHeroDesc}>
-              {!isCustProfileComplete
-                ? 'Mandatory Requirement: Please complete your profile details (Email and Residential Address) in the Profile tab to unlock scheme enrollment.'
-                : 'Your profile is verified! Select an organizer chit scheme below to avail your net payout and start saving.'}
-            </Text>
-            <TouchableOpacity
-              style={styles.noSchemeHeroBtn}
-              onPress={() => {
-                if (!isCustProfileComplete) {
-                  navigation.navigate('Profile');
-                } else {
-                  navigation.navigate('MySchemes');
-                }
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.noSchemeHeroBtnText}>
-                {!isCustProfileComplete ? 'Complete Profile Setup →' : 'Explore & Avail Schemes →'}
-              </Text>
-            </TouchableOpacity>
           </Card>
-        ) : stats.remainingAmount > 0 ? (
-          <Card style={[styles.nextPayCard, isOverdue ? styles.overdueNextPayCard : styles.upToDateNextPayCard]}>
-            {isOverdue ? (
-              <>
-                <View style={styles.overdueHeaderBadge}>
-                  <Text style={styles.overdueHeaderBadgeText}>⚠️ MISSED INSTALLMENT OVERDUE</Text>
-                </View>
-                <Text style={[styles.nextPayLabel, styles.overdueNextPayLabel]}>
-                  MISSED INSTALLMENT DUE
-                </Text>
-                <Text style={[styles.nextPayDate, styles.overdueNextPayDate]}>
-                  {formatDateLong(customer.nextPaymentDate)}
-                </Text>
-                <Text style={[styles.nextPayDetails, styles.overdueNextPayDetails]}>
-                  ₹{customer.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(customer.frequency)} ({statusInfo.statusText})
-                </Text>
-
-                <View style={styles.overdueWarningBox}>
-                  <Text style={styles.overdueWarningTitle}>⚠️ PAYMENT DUE DATE HAS CROSSED</Text>
-                  <Text style={styles.overdueWarningText}>
-                    Your installment of ₹{customer.collectionAmount.toLocaleString('en-IN')} is overdue. Please pay directly to the Admin / Collector to update your payment status.
-                  </Text>
-                </View>
-              </>
-            ) : (
-              <>
-                <View style={styles.upToDateHeaderBadge}>
-                  <Text style={styles.upToDateHeaderBadgeText}>✓ UP TO DATE — NO OVERDUE</Text>
-                </View>
-                <Text style={styles.upToDateNextPayLabel}>NEXT PAYMENT DUE</Text>
-                <Text style={styles.upToDateNextPayDate}>{formatDateLong(customer.nextPaymentDate)}</Text>
-                <Text style={styles.upToDateNextPayDetails}>
-                  ₹{customer.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(customer.frequency)}
-                </Text>
-
-                <View style={styles.upToDateAdminCollectionBadge}>
-                  <Text style={styles.upToDateAdminCollectionText}>
-                    📌 Installments are collected & recorded directly by Admin
-                  </Text>
-                </View>
-              </>
-            )}
+        ) : isDueToday ? (
+          <Card style={styles.dueTodayCard}>
+            <View style={styles.dueTodayBadge}>
+              <Text style={styles.dueTodayBadgeText}>📅 DUE TODAY</Text>
+            </View>
+            <Text style={styles.dueAmountHeader}>
+              ₹{customer.collectionAmount.toLocaleString('en-IN')}
+            </Text>
+            <Text style={styles.dueDateTodayText}>
+              Due Today ({formatDateLong(customer.nextPaymentDate)})
+            </Text>
+            <Text style={styles.dueTodayNote}>
+              Kindly make your installment payment to the administrator today.
+            </Text>
+          </Card>
+        ) : isSettled ? (
+          <Card style={styles.settledCard}>
+            <Text style={styles.settledIcon}>🎉</Text>
+            <Text style={styles.settledTitle}>Account Fully Settled!</Text>
+            <Text style={styles.settledDesc}>
+              You have completed all repayment installments for this loan. Thank you!
+            </Text>
           </Card>
         ) : (
-          <Card style={[styles.nextPayCard, styles.settledCard]}>
-            <Text style={styles.settledTextTitle}>✓ Account Fully Settled</Text>
-            <Text style={styles.settledTextDesc}>
-              You have completed all installments for this scheme. Congratulations!
+          <Card style={styles.upToDateCard}>
+            <View style={styles.upToDateBadge}>
+              <Text style={styles.upToDateBadgeText}>✓ UP TO DATE</Text>
+            </View>
+            <Text style={styles.upToDateNextPayLabel}>NEXT COLLECTION DUE</Text>
+            <Text style={styles.upToDateNextPayDate}>{formatDateLong(customer.nextPaymentDate)}</Text>
+            <Text style={styles.upToDateNextPayDetails}>
+              ₹{customer.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(customer.frequency)}
+            </Text>
+            <Text style={styles.upToDateAdminNote}>
+              📌 Installments are collected & verified directly by Admin
             </Text>
           </Card>
         )}
 
-        {/* My Active Chit Scheme Section */}
-        <Text style={styles.sectionTitle}>My Chit Scheme & Payout Details</Text>
-        {!hasAvailedScheme ? (
-          <Card style={styles.emptySchemeCard}>
-            <View style={styles.emptySchemeIconBox}>
-              <Text style={styles.emptySchemeIcon}>🪙</Text>
+        {/* LENDING & REPAYMENT TERMS CARD */}
+        <Text style={styles.sectionTitle}>Lending & Repayment Terms</Text>
+        <Card style={styles.termsCard}>
+          <View style={styles.termsIdRow}>
+            <Text style={styles.termsIdLabel}>Customer ID (Login ID)</Text>
+            <Text style={styles.termsIdVal}>{customer.id}</Text>
+          </View>
+
+          <View style={styles.termsGrid}>
+            <View style={styles.termsCol}>
+              <Text style={styles.termsLabel}>DISBURSED PAYOUT</Text>
+              <Text style={styles.termsPayoutVal}>₹{payoutAmt.toLocaleString('en-IN')}</Text>
             </View>
-            <Text style={styles.emptySchemeTitle}>No Scheme Availed Yet</Text>
-            <Text style={styles.emptySchemeText}>
-              In the beginning, no scheme is assigned to your account. Complete your profile setup and select a scheme from the available list below to avail your net payout.
-            </Text>
-          </Card>
-        ) : (
-          <Card style={styles.schemeCard}>
-          <View style={styles.lockedTermsHeader}>
-            <Text style={styles.lockedTermsIcon}>🔒</Text>
-            <View style={{ flex: 1, marginLeft: SPACING.xs }}>
-              <Text style={styles.lockedTermsTitle}>PERMANENT CONTRACT TERMS</Text>
-              <Text style={styles.lockedTermsSub}>
-                Agreed at enrollment ({formatDateShort(enrolledSnapshot?.enrolledAt || customer.startDate)}) · Protected forever
-              </Text>
+            <View style={styles.termsCol}>
+              <Text style={styles.termsLabel}>TOTAL REPAYABLE</Text>
+              <Text style={styles.termsVal}>₹{totalValue.toLocaleString('en-IN')}</Text>
+            </View>
+            <View style={styles.termsCol}>
+              <Text style={styles.termsLabel}>PAID SO FAR</Text>
+              <Text style={styles.termsPaidVal}>₹{stats.paidAmount.toLocaleString('en-IN')}</Text>
+            </View>
+            <View style={styles.termsCol}>
+              <Text style={styles.termsLabel}>REMAINING</Text>
+              <Text style={styles.termsRemVal}>₹{stats.remainingAmount.toLocaleString('en-IN')}</Text>
             </View>
           </View>
 
-          <View style={styles.schemeRow}>
-            <Text style={styles.schemeLabel}>Scheme Name</Text>
-            <Text style={styles.schemeVal}>{activeSchemeName}</Text>
-          </View>
-          <View style={styles.schemeRow}>
-            <Text style={styles.schemeLabel}>Total Scheme Value</Text>
-            <Text style={styles.schemeVal}>₹{activeSchemeValue.toLocaleString('en-IN')}</Text>
-          </View>
-          {activeInterest > 0 ? (
-            <View style={styles.schemeRow}>
-              <Text style={styles.schemeLabel}>Upfront Interest Deduction</Text>
-              <Text style={styles.schemeInterestVal}>
-                - ₹{activeInterest.toLocaleString('en-IN')} ({((activeInterest / activeSchemeValue) * 100).toFixed(1)}% rate)
-              </Text>
+          {/* Progress Bar */}
+          <View style={styles.progressContainer}>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressBar, { width: `${stats.progressPercentage}%` }]} />
             </View>
-          ) : null}
-          <View style={[styles.schemeRow, styles.schemeHighlightRow]}>
-            <Text style={styles.schemeHighlightLabel}>Net Amount Received (Payout)</Text>
-            <Text style={styles.schemeHighlightVal}>
-              ₹{activePayout.toLocaleString('en-IN')}
-            </Text>
+            <Text style={styles.progressPercentageText}>{Math.round(stats.progressPercentage)}% Paid</Text>
           </View>
-          <View style={styles.schemeRow}>
-            <Text style={styles.schemeLabel}>Installment Schedule</Text>
-            <Text style={styles.schemeVal}>
-              ₹{customer.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(customer.frequency)}
+
+          <View style={styles.termsDivider} />
+
+          <View style={styles.termsRow}>
+            <Text style={styles.termsRowLabel}>Collection Schedule</Text>
+            <Text style={styles.termsRowVal}>
+              ₹{customer.collectionAmount.toLocaleString('en-IN')} / {formatFrequency(customer.frequency)}
             </Text>
           </View>
 
-          {/* Customer Explanation Note */}
-          <View style={styles.customerNoticeBox}>
-            <Text style={styles.noticeIcon}>ℹ️</Text>
-            <Text style={styles.noticeText}>
-              You receive a net payout of ₹{activePayout.toLocaleString('en-IN')} upfront (after ₹{activeInterest.toLocaleString('en-IN')} interest deduction), and repay ₹{activeSchemeValue.toLocaleString('en-IN')} across scheduled installments.
-              {'\n'}• Your enrolled terms are locked forever. Future modifications by admin to general scheme templates will never affect your agreement.
+          <View style={styles.termsRow}>
+            <Text style={styles.termsRowLabel}>Total Installment Cycles</Text>
+            <Text style={styles.termsRowVal}>
+              {customer.durationInstallments || 50} installments
+            </Text>
+          </View>
+
+          <View style={styles.termsRow}>
+            <Text style={styles.termsRowLabel}>Total Collections Recorded</Text>
+            <Text style={styles.termsRowVal}>
+              {stats.totalPayments} {stats.totalPayments === 1 ? 'payment' : 'payments'}
             </Text>
           </View>
         </Card>
-      )}
 
-        {/* Available Admin Schemes Section */}
-        <View style={styles.sectionHeaderBox}>
-          <Text style={styles.sectionTitle}>Available Admin Schemes</Text>
-          <Text style={styles.sectionSubtitle}>
-            Choose or switch to any scheme offered by the organizer
-          </Text>
-        </View>
-
-        {schemes.map((s) => {
-          const interest = s.interestAmount || 0;
-          const interestRate = s.totalAmount > 0 ? ((interest / s.totalAmount) * 100).toFixed(1) : '0';
-          const payout = s.payoutAmount || Math.max(0, s.totalAmount - interest);
-
-          // BUSINESS RULE: A scheme in the list is the active scheme ONLY if its terms
-          // match the customer's enrolled contract (old interest & old payout).
-          // If the admin edited the scheme with new interest/payout, it is a separate new unavailed scheme!
-          const matchesContractTerms = hasAvailedScheme &&
-            s.totalAmount === activeSchemeValue &&
-            interest === activeInterest &&
-            payout === activePayout &&
-            s.collectionAmount === customer.collectionAmount &&
-            s.frequency === customer.frequency;
-
-          const isCurrent = matchesContractTerms;
-
-          const accurateDesc = `Total Chit Value is ₹${s.totalAmount.toLocaleString('en-IN')}. An upfront interest of ₹${interest.toLocaleString('en-IN')} is deducted, giving the customer a net payout of ₹${payout.toLocaleString('en-IN')}. The customer repays ₹${s.totalAmount.toLocaleString('en-IN')} across ${s.durationWeeksOrMonths} installments of ₹${s.collectionAmount.toLocaleString('en-IN')} (${formatFrequency(s.frequency)}).`;
-
-          return (
-            <Card key={s.id} style={[styles.availableSchemeCard, isCurrent && styles.activeSchemeCardBorder]}>
-              <View style={styles.schemeCardHeader}>
-                <View style={{ flex: 1, marginRight: SPACING.sm }}>
-                  <Text style={styles.schemeCardName}>{s.name}</Text>
-                  <Text style={styles.schemeCardTag}>
-                    ₹{s.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(s.frequency)} ({s.durationWeeksOrMonths} collections)
-                  </Text>
-                </View>
-
-                {isCurrent ? (
-                  <View style={styles.enrolledBadge}>
-                    <Text style={styles.enrolledBadgeText}>✓ Active Scheme</Text>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.selectSchemeBtn}
-                    onPress={() => handleSelectScheme(s)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.selectSchemeBtnText}>Avail Scheme →</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              <View style={styles.schemeCardDivider} />
-
-              <View style={styles.schemeCardGrid}>
-                <View style={styles.schemeCardCol}>
-                  <Text style={styles.schemeCardLabel}>TOTAL VALUE</Text>
-                  <Text style={styles.schemeCardVal}>₹{s.totalAmount.toLocaleString('en-IN')}</Text>
-                </View>
-                <View style={styles.schemeCardCol}>
-                  <Text style={styles.schemeCardLabel}>INTEREST DEDUCTION</Text>
-                  <Text style={styles.schemeCardInterest}>- ₹{interest.toLocaleString('en-IN')} ({interestRate}%)</Text>
-                </View>
-                <View style={styles.schemeCardCol}>
-                  <Text style={styles.schemeCardLabel}>NET PAYOUT</Text>
-                  <Text style={styles.schemeCardPayout}>₹{payout.toLocaleString('en-IN')}</Text>
-                </View>
-              </View>
-
-              <Text style={styles.schemeCardDesc}>{accurateDesc}</Text>
-            </Card>
-          );
-        })}
-
-        {/* Recent Payments Collected */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Payments Collected</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Receipts')}>
-            <Text style={styles.sectionLink}>View All Receipts</Text>
+        {/* RECENT PAYMENTS */}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Recent Payments</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Payments')}>
+            <Text style={styles.viewAllLink}>View All →</Text>
           </TouchableOpacity>
         </View>
+
         <Card style={styles.historyCard}>
           {recentPayments.length === 0 ? (
             <View style={styles.emptyHistory}>
-              <Text style={styles.emptyHistoryText}>No payments recorded by admin yet.</Text>
+              <Text style={styles.emptyHistoryText}>No payments recorded yet</Text>
             </View>
           ) : (
             recentPayments.map((item) => (
@@ -439,22 +285,6 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           )}
         </Card>
       </ScrollView>
-
-      {/* Interactive Scheme Avail Confirmation & Success Modal */}
-      <AvailSchemeModal
-        visible={Boolean(confirmScheme)}
-        scheme={confirmScheme}
-        onClose={() => {
-          if (!isAvailing) {
-            setConfirmScheme(null);
-            setAvailSuccessScheme(null);
-          }
-        }}
-        onConfirm={handleConfirmAvail}
-        isLoading={isAvailing}
-        successScheme={availSuccessScheme}
-        onSuccessDone={handleSuccessDone}
-      />
     </SafeAreaView>
   );
 };
@@ -476,461 +306,390 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.captionBold,
     color: COLORS.textLight,
     letterSpacing: 1,
+    fontSize: 10,
+  },
+  headerNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+    marginTop: 2,
   },
   customerName: {
     ...TYPOGRAPHY.h2,
     color: COLORS.white,
-    marginTop: 2,
   },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.success,
-    alignItems: 'center',
-    justifyContent: 'center',
+  custIdBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
-  avatarText: {
-    ...TYPOGRAPHY.bodyLarge,
+  custIdBadgeText: {
+    ...TYPOGRAPHY.captionBold,
     color: COLORS.white,
-    fontWeight: '700',
+    fontSize: 11,
+    fontFamily: 'monospace',
   },
   headerRightRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
+    gap: SPACING.xs + 2,
+  },
+  avatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: COLORS.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.white,
+    fontSize: 13,
   },
   headerLogoutBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: 'rgba(239, 68, 68, 0.18)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: 7,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.35)',
   },
   headerLogoutText: {
     ...TYPOGRAPHY.captionBold,
-    color: '#FCA5A5',
-    fontSize: 12,
+    color: COLORS.white,
+    fontSize: 11,
   },
   scrollContent: {
     padding: SPACING.lg,
+    paddingBottom: SPACING.xl * 2,
     backgroundColor: COLORS.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     flexGrow: 1,
   },
-  heroCard: {
-    backgroundColor: COLORS.primaryLight,
-    padding: SPACING.lg,
-    marginBottom: SPACING.lg,
+  latestInvoiceCard: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#86EFAC',
+    borderWidth: 1,
+    marginBottom: SPACING.md,
+    padding: SPACING.md,
   },
-  heroLabel: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.textLight,
-    letterSpacing: 1,
-  },
-  heroAmount: {
-    ...TYPOGRAPHY.amountLarge,
-    color: COLORS.white,
-    marginTop: SPACING.sm,
-  },
-  heroSubText: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textLight,
-    marginTop: 4,
-  },
-  progressBarBg: {
-    height: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginVertical: SPACING.md,
-  },
-  progressBarFg: {
-    height: '100%',
-    backgroundColor: COLORS.success,
-    borderRadius: 3,
-  },
-  summaryStatsRow: {
+  latestInvoiceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
   },
-  subStatLabel: {
+  latestInvoiceBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  latestInvoiceBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#15803D',
+    fontSize: 10,
+  },
+  latestInvoiceDate: {
     ...TYPOGRAPHY.caption,
-    color: COLORS.textLight,
+    color: '#166534',
   },
-  subStatValue: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.white,
-    marginTop: 2,
-  },
-  nextPayCard: {
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginBottom: SPACING.lg,
+  latestInvoiceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  upToDateNextPayCard: {
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1.5,
-    borderColor: '#6EE7B7',
-    marginBottom: SPACING.lg,
-    alignItems: 'center',
+  latestInvoiceInfo: {
+    flex: 1,
   },
-  upToDateHeaderBadge: {
-    backgroundColor: '#D1FAE5',
-    borderWidth: 1,
-    borderColor: '#6EE7B7',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginBottom: SPACING.sm,
-  },
-  upToDateHeaderBadgeText: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#065F46',
-    fontSize: 11,
-    letterSpacing: 0.5,
-  },
-  upToDateNextPayLabel: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#047857',
-    letterSpacing: 0.5,
-  },
-  upToDateNextPayDate: {
+  latestInvoiceAmount: {
     ...TYPOGRAPHY.h2,
-    color: '#065F46',
-    marginTop: SPACING.xs,
+    color: '#15803D',
   },
-  upToDateNextPayDetails: {
-    ...TYPOGRAPHY.bodyMedium,
-    color: '#047857',
-    marginTop: 2,
-    marginBottom: SPACING.md,
-    fontWeight: '600',
+  latestInvoiceSub: {
+    ...TYPOGRAPHY.caption,
+    color: '#166534',
   },
-  upToDateAdminCollectionBadge: {
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 8,
-    borderRadius: 8,
-    width: '100%',
+  latestInvoiceBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
-  upToDateAdminCollectionText: {
+  latestInvoiceBtnIcon: {
+    fontSize: 12,
+  },
+  latestInvoiceBtnText: {
     ...TYPOGRAPHY.captionBold,
-    color: '#047857',
+    color: COLORS.white,
     fontSize: 11,
   },
-  overdueNextPayCard: {
+  // Due date cards
+  overdueDueCard: {
     backgroundColor: '#FEF2F2',
-    borderWidth: 1.5,
-    borderColor: '#EF4444',
-    borderLeftWidth: 6,
+    borderColor: '#FCA5A5',
+    borderWidth: 1,
+    marginBottom: SPACING.lg,
+    padding: SPACING.lg,
+  },
+  overdueBadgeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
   },
   overdueHeaderBadge: {
     backgroundColor: '#FEE2E2',
-    borderWidth: 1,
-    borderColor: '#EF4444',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginBottom: SPACING.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   overdueHeaderBadgeText: {
     ...TYPOGRAPHY.captionBold,
     color: '#DC2626',
-    fontSize: 11,
-    letterSpacing: 0.5,
+    fontSize: 10,
   },
-  nextPayLabel: {
+  overdueDaysNotice: {
     ...TYPOGRAPHY.captionBold,
-    color: COLORS.textMuted,
-    letterSpacing: 0.5,
+    color: '#DC2626',
   },
-  overdueNextPayLabel: {
-    color: '#B91C1C',
+  dueAmountHeader: {
+    ...TYPOGRAPHY.hero,
+    color: '#DC2626',
+    marginVertical: SPACING.xs,
   },
-  nextPayDate: {
-    ...TYPOGRAPHY.h2,
-    color: COLORS.primary,
-    marginTop: SPACING.xs,
-  },
-  overdueNextPayDate: {
+  dueDateOverdueText: {
+    ...TYPOGRAPHY.bodyMediumBold,
     color: '#991B1B',
   },
-  nextPayDetails: {
-    ...TYPOGRAPHY.bodyMedium,
-    color: COLORS.textMuted,
-    marginTop: 2,
-    marginBottom: SPACING.md,
-  },
-  overdueNextPayDetails: {
-    color: '#DC2626',
-    fontWeight: '600',
-  },
   overdueWarningBox: {
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FCA5A5',
+    backgroundColor: 'rgba(220, 38, 38, 0.08)',
     borderRadius: 8,
-    padding: SPACING.sm + 2,
-    width: '100%',
-    alignItems: 'center',
+    padding: SPACING.sm,
+    marginTop: SPACING.sm,
   },
   overdueWarningTitle: {
     ...TYPOGRAPHY.captionBold,
-    color: '#991B1B',
-    fontSize: 11,
+    color: '#DC2626',
+    fontSize: 10,
     marginBottom: 2,
   },
-  overdueWarningText: {
+  overdueWarningDesc: {
     ...TYPOGRAPHY.caption,
-    color: '#B91C1C',
-    textAlign: 'center',
-    fontSize: 11,
+    color: '#7F1D1D',
     lineHeight: 15,
   },
-  adminCollectionBadge: {
-    backgroundColor: '#F0F9FF',
+  dueTodayCard: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
     borderWidth: 1,
-    borderColor: '#BAE6FD',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 8,
-    borderRadius: 8,
-    width: '100%',
-    alignItems: 'center',
+    marginBottom: SPACING.lg,
+    padding: SPACING.lg,
   },
-  adminCollectionText: {
+  dueTodayBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginBottom: SPACING.xs,
+  },
+  dueTodayBadgeText: {
     ...TYPOGRAPHY.captionBold,
-    color: '#0369A1',
-    fontSize: 11,
+    color: '#D97706',
+    fontSize: 10,
+  },
+  dueDateTodayText: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#92400E',
+  },
+  dueTodayNote: {
+    ...TYPOGRAPHY.caption,
+    color: '#B45309',
+    marginTop: SPACING.xs,
   },
   settledCard: {
-    backgroundColor: COLORS.successLight,
-    borderColor: 'rgba(16, 185, 129, 0.2)',
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+    borderWidth: 1,
+    alignItems: 'center',
     paddingVertical: SPACING.lg,
+    marginBottom: SPACING.lg,
   },
-  settledTextTitle: {
-    ...TYPOGRAPHY.bodyLarge,
-    fontWeight: '700',
-    color: COLORS.success,
+  settledIcon: {
+    fontSize: 32,
+    marginBottom: 6,
   },
-  settledTextDesc: {
-    ...TYPOGRAPHY.bodyMedium,
-    color: COLORS.success,
+  settledTitle: {
+    ...TYPOGRAPHY.h3,
+    color: '#15803D',
+  },
+  settledDesc: {
+    ...TYPOGRAPHY.caption,
+    color: '#166534',
     textAlign: 'center',
-    marginTop: SPACING.xs,
-    paddingHorizontal: SPACING.sm,
+    marginTop: 4,
+  },
+  upToDateCard: {
+    backgroundColor: COLORS.white,
+    borderColor: '#E2E8F0',
+    borderWidth: 1,
+    marginBottom: SPACING.lg,
+    padding: SPACING.lg,
+  },
+  upToDateBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginBottom: SPACING.xs,
+  },
+  upToDateBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#15803D',
+    fontSize: 10,
+  },
+  upToDateNextPayLabel: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textMuted,
+    fontSize: 10,
+    letterSpacing: 0.5,
+  },
+  upToDateNextPayDate: {
+    ...TYPOGRAPHY.h2,
+    color: COLORS.primary,
+    marginVertical: 2,
+  },
+  upToDateNextPayDetails: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.secondary,
+  },
+  upToDateAdminNote: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textLight,
+    marginTop: SPACING.sm,
   },
   sectionTitle: {
     ...TYPOGRAPHY.h3,
     color: COLORS.primary,
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.xs + 2,
   },
-  sectionHeaderBox: {
-    marginTop: SPACING.md,
-    marginBottom: SPACING.sm,
-  },
-  sectionSubtitle: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textMuted,
-    marginTop: -SPACING.xs + 2,
-    marginBottom: SPACING.md,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-    marginTop: SPACING.sm,
-  },
-  sectionLink: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.secondary,
-  },
-  lockedTermsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: SPACING.sm,
-    borderRadius: 8,
-    marginBottom: SPACING.sm + 2,
-  },
-  lockedTermsIcon: {
-    fontSize: 16,
-    marginRight: SPACING.xs,
-  },
-  lockedTermsTitle: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#0F172A',
-    fontSize: 11,
-    letterSpacing: 0.5,
-  },
-  lockedTermsSub: {
-    ...TYPOGRAPHY.caption,
-    color: '#64748B',
-    fontSize: 10,
-    marginTop: 1,
-  },
-  schemeCard: {
+  termsCard: {
     marginBottom: SPACING.lg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    padding: SPACING.md,
   },
-  schemeRow: {
+  termsIdRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: SPACING.sm,
+    alignItems: 'center',
+    paddingBottom: SPACING.xs + 2,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+    marginBottom: SPACING.sm,
   },
-  schemeInterestVal: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: '#D97706',
-  },
-  schemeHighlightRow: {
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: SPACING.sm,
-    borderRadius: 8,
-    marginVertical: 4,
-    borderBottomWidth: 0,
-  },
-  schemeHighlightLabel: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: '#047857',
-    fontSize: 13,
-  },
-  schemeHighlightVal: {
-    ...TYPOGRAPHY.amountMedium,
-    color: '#059669',
-    fontSize: 15,
-  },
-  customerNoticeBox: {
-    flexDirection: 'row',
-    backgroundColor: '#F0F9FF',
-    borderWidth: 1,
-    borderColor: '#BAE6FD',
-    borderRadius: 8,
-    padding: SPACING.sm + 2,
-    marginTop: SPACING.md,
-    alignItems: 'flex-start',
-  },
-  noticeIcon: {
-    fontSize: 14,
-    marginRight: 6,
-    marginTop: 1,
-  },
-  noticeText: {
-    ...TYPOGRAPHY.caption,
-    color: '#0369A1',
-    flex: 1,
-    lineHeight: 16,
-    fontSize: 11,
-  },
-  schemeLabel: {
-    ...TYPOGRAPHY.bodyMedium,
+  termsIdLabel: {
+    ...TYPOGRAPHY.captionBold,
     color: COLORS.textMuted,
   },
-  schemeVal: {
+  termsIdVal: {
     ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.text,
+    color: COLORS.secondary,
+    fontFamily: 'monospace',
   },
-  availableSchemeCard: {
-    marginBottom: SPACING.md,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
+  termsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.sm,
   },
-  activeSchemeCardBorder: {
-    borderColor: COLORS.success,
-    backgroundColor: '#F0FDF4',
+  termsCol: {
+    alignItems: 'flex-start',
   },
-  schemeCardHeader: {
+  termsLabel: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 9,
+    color: COLORS.textLight,
+  },
+  termsVal: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.primary,
+    fontSize: 12,
+  },
+  termsPayoutVal: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#2563EB',
+    fontSize: 12,
+  },
+  termsPaidVal: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.success,
+    fontSize: 12,
+  },
+  termsRemVal: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.danger,
+    fontSize: 12,
+  },
+  progressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  progressTrack: {
+    flex: 1,
+    height: 6,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: COLORS.success,
+  },
+  progressPercentageText: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 10,
+    color: COLORS.textMuted,
+    minWidth: 50,
+    textAlign: 'right',
+  },
+  termsDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: SPACING.xs,
+  },
+  termsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 5,
+  },
+  termsRowLabel: {
+    ...TYPOGRAPHY.bodyMedium,
+    color: COLORS.textMuted,
+    fontSize: 13,
+  },
+  termsRowVal: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.primary,
+    fontSize: 13,
+  },
+  sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: SPACING.xs + 2,
   },
-  schemeCardName: {
-    ...TYPOGRAPHY.bodyLarge,
-    fontWeight: '700',
-    color: COLORS.primary,
-  },
-  schemeCardTag: {
+  viewAllLink: {
     ...TYPOGRAPHY.captionBold,
     color: COLORS.secondary,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  enrolledBadge: {
-    backgroundColor: '#D1FAE5',
-    borderWidth: 1,
-    borderColor: '#6EE7B7',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  enrolledBadgeText: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#065F46',
-    fontSize: 11,
-  },
-  selectSchemeBtn: {
-    backgroundColor: COLORS.secondary,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  selectSchemeBtnText: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.white,
-    fontSize: 11,
-  },
-  schemeCardDivider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginVertical: SPACING.sm + 2,
-  },
-  schemeCardGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  schemeCardCol: {
-    flex: 1,
-  },
-  schemeCardLabel: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.textLight,
-    fontSize: 9,
-  },
-  schemeCardVal: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.text,
-    marginTop: 2,
-  },
-  schemeCardInterest: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: '#D97706',
-    marginTop: 2,
-  },
-  schemeCardPayout: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.success,
-    marginTop: 2,
-  },
-  schemeCardDesc: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textMuted,
-    marginTop: SPACING.sm,
-    fontSize: 11,
-    lineHeight: 15,
   },
   historyCard: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
     paddingHorizontal: SPACING.md,
     paddingVertical: 0,
     marginBottom: SPACING.xl,
@@ -943,89 +702,6 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.bodyMedium,
     color: COLORS.textMuted,
   },
-  lockedCard: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    borderRadius: 16,
-    padding: SPACING.xl,
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-  },
-  lockedIconBox: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#EEF2F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: SPACING.md,
-  },
-  lockedIcon: {
-    fontSize: 28,
-  },
-  lockedTitle: {
-    ...TYPOGRAPHY.h3,
-    color: '#334155',
-    textAlign: 'center',
-    marginBottom: SPACING.xs,
-  },
-  lockedText: {
-    ...TYPOGRAPHY.bodyMedium,
-    color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: SPACING.md,
-  },
-  lockedBadge: {
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#FCD34D',
-    borderRadius: 20,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 6,
-  },
-  lockedBadgeText: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#92400E',
-  },
-  customerIncompleteBanner: {
-    backgroundColor: '#FFFBEB',
-    borderWidth: 1.5,
-    borderColor: '#F59E0B',
-    borderRadius: 12,
-    padding: SPACING.md,
-    marginBottom: SPACING.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  customerIncompleteIcon: {
-    fontSize: 22,
-  },
-  customerIncompleteTitle: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#92400E',
-    fontSize: 12,
-  },
-  customerIncompleteText: {
-    ...TYPOGRAPHY.caption,
-    color: '#B45309',
-    marginTop: 2,
-    fontSize: 11,
-    lineHeight: 15,
-  },
-  customerIncompleteAction: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#D97706',
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginLeft: SPACING.xs,
-  },
-  selectSchemeBtnDisabled: {
-    backgroundColor: '#94A3B8',
-  },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1037,172 +713,6 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.bodyLarge,
     color: COLORS.danger,
     marginBottom: SPACING.lg,
-  },
-  // Latest Invoice Proof Card Styles
-  latestInvoiceCard: {
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1.5,
-    borderColor: '#34D399',
-    borderRadius: 14,
-    marginBottom: SPACING.lg,
-    padding: SPACING.md,
-  },
-  latestInvoiceHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.xs + 2,
-  },
-  latestInvoiceBadge: {
-    backgroundColor: '#D1FAE5',
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#6EE7B7',
-  },
-  latestInvoiceBadgeText: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#065F46',
-    fontSize: 10,
-    letterSpacing: 0.5,
-  },
-  latestInvoiceDate: {
-    ...TYPOGRAPHY.caption,
-    color: '#047857',
-    fontSize: 11,
-  },
-  latestInvoiceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  latestInvoiceInfo: {
-    flex: 1,
-    paddingRight: SPACING.sm,
-  },
-  latestInvoiceAmount: {
-    ...TYPOGRAPHY.amountMedium,
-    color: '#065F46',
-    fontWeight: '800',
-  },
-  latestInvoiceSub: {
-    ...TYPOGRAPHY.caption,
-    color: '#047857',
-    marginTop: 1,
-  },
-  latestInvoiceBtn: {
-    backgroundColor: '#10B981',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm + 2,
-    borderRadius: 10,
-    elevation: 2,
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  latestInvoiceBtnIcon: {
-    fontSize: 14,
-    marginRight: 4,
-  },
-  latestInvoiceBtnText: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.white,
-    fontSize: 11,
-  },
-  // No Scheme Hero Card
-  noSchemeHeroCard: {
-    backgroundColor: '#F0F9FF',
-    borderWidth: 1.5,
-    borderColor: '#7DD3FC',
-    borderRadius: 16,
-    padding: SPACING.lg,
-    marginBottom: SPACING.lg,
-  },
-  noSchemeHeroHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  noSchemeHeroBadge: {
-    backgroundColor: '#E0F2FE',
-    borderWidth: 1,
-    borderColor: '#BAE6FD',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  noSchemeHeroBadgeText: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#0284C7',
-    fontSize: 10,
-    letterSpacing: 0.5,
-  },
-  noSchemeHeroStep: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#0369A1',
-    fontSize: 11,
-  },
-  noSchemeHeroTitle: {
-    ...TYPOGRAPHY.h3,
-    color: '#0C4A6E',
-    marginBottom: 4,
-  },
-  noSchemeHeroDesc: {
-    ...TYPOGRAPHY.bodyMedium,
-    color: '#0369A1',
-    lineHeight: 20,
-    marginBottom: SPACING.md,
-  },
-  noSchemeHeroBtn: {
-    backgroundColor: COLORS.secondary,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  noSchemeHeroBtnText: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.white,
-  },
-  // Empty Scheme Card (Under My Chit Scheme & Payout Details)
-  emptySchemeCard: {
-    backgroundColor: COLORS.white,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    borderRadius: 16,
-    padding: SPACING.xl,
-    alignItems: 'center',
-    marginBottom: SPACING.xl,
-  },
-  emptySchemeIconBox: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: SPACING.sm,
-  },
-  emptySchemeIcon: {
-    fontSize: 26,
-  },
-  emptySchemeTitle: {
-    ...TYPOGRAPHY.h3,
-    color: COLORS.primary,
-    marginBottom: 4,
-  },
-  emptySchemeText: {
-    ...TYPOGRAPHY.bodyMedium,
-    color: COLORS.textMuted,
-    textAlign: 'center',
-    lineHeight: 20,
-    maxWidth: 380,
   },
 });
 

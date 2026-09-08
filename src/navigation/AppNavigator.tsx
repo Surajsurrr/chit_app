@@ -109,7 +109,6 @@ function AdminCustomTabBar({ state, descriptors, navigation, insets }: CustomTab
         else if (route.name === 'Customers') iconName = 'people';
         else if (route.name === 'Collections') iconName = 'cash';
         else if (route.name === 'Receipts') iconName = 'receipt';
-        else if (route.name === 'Schemes') iconName = 'list';
 
         const color = isFocused ? COLORS.secondary : COLORS.textMuted;
 
@@ -200,7 +199,7 @@ function CustomerCustomTabBar({ state, descriptors, navigation, insets }: Custom
 
         let iconName: keyof typeof Ionicons.glyphMap = 'home';
         if (route.name === 'Home') iconName = 'home';
-        else if (route.name === 'MySchemes') iconName = 'layers';
+        else if (route.name === 'Payments') iconName = 'wallet';
         else if (route.name === 'Receipts') iconName = 'receipt';
         else if (route.name === 'Profile') iconName = 'person';
 
@@ -252,7 +251,6 @@ function AdminTabNavigator() {
       <Tab.Screen name="Customers" component={CustomersScreen} />
       <Tab.Screen name="Collections" component={CollectionsScreen} />
       <Tab.Screen name="Receipts" component={ReceiptsScreen} />
-      <Tab.Screen name="Schemes" component={SchemesScreen} />
     </Tab.Navigator>
   );
 }
@@ -265,7 +263,7 @@ function CustomerTabNavigator() {
       screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="MySchemes" component={MySchemesScreen} options={{ tabBarLabel: 'My Schemes' }} />
+      <Tab.Screen name="Payments" component={PaymentsScreen} />
       <Tab.Screen name="Receipts" component={ReceiptsScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>

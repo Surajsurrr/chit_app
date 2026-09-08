@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,47 +16,41 @@ import FormInput from '../../components/FormInput';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import { StatusBar } from 'expo-status-bar';
+
 export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const {
     loginAsAdmin,
     loginAsCustomer,
     registerAdmin,
-    registerCustomer,
     isCloudConnected,
     admins,
     customers,
   } = useChitData();
 
-  // Mode tabs: 'signin' or 'signup'
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
-  // Role tabs: 'admin' or 'customer'
+  // Role tab: 'admin' or 'customer' (default: 'customer' or 'admin' - let's default to 'admin')
   const [loginTab, setLoginTab] = useState<'admin' | 'customer'>('admin');
+  // Admin authMode: 'signin' or 'signup' (only for admin)
+  const [adminAuthMode, setAdminAuthMode] = useState<'signin' | 'signup'>('signin');
 
   // Sign In states
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerIdentifier, setCustomerIdentifier] = useState('');
   const [customerPin, setCustomerPin] = useState('');
 
-  // Sign Up states - Admin
+  // Sign Up states - Admin only
   const [regAdminUser, setRegAdminUser] = useState('');
   const [regAdminPass, setRegAdminPass] = useState('');
   const [regAdminConfirm, setRegAdminConfirm] = useState('');
-
-  // Sign Up states - Customer
-  const [regCustName, setRegCustName] = useState('');
-  const [regCustPhone, setRegCustPhone] = useState('');
-  const [regCustPin, setRegCustPin] = useState('');
-  const [regCustConfirm, setRegCustConfirm] = useState('');
 
   // General state handlers
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
-  // Success Feedback Modal & Persistent Banner states
+  // Success Feedback Modal & Persistent Banner states for Admin
   const [successModal, setSuccessModal] = useState<{
     visible: boolean;
-    role: 'admin' | 'customer';
+    role: 'admin';
     title: string;
     greeting: string;
     message: string;
@@ -66,21 +59,17 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   } | null>(null);
 
   const [registrationBanner, setRegistrationBanner] = useState<{
-    role: 'admin' | 'customer';
+    role: 'admin';
     text: string;
   } | null>(null);
 
   const resetForm = () => {
     setAdminPassword('');
-    setCustomerPhone('');
+    setCustomerIdentifier('');
     setCustomerPin('');
     setRegAdminUser('');
     setRegAdminPass('');
     setRegAdminConfirm('');
-    setRegCustName('');
-    setRegCustPhone('');
-    setRegCustPin('');
-    setRegCustConfirm('');
     setErrors({});
   };
 
@@ -111,21 +100,22 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
   };
 
-  // Login handler - Customer
+  // Login handler - Customer (ID or Mobile + 4-digit PIN)
   const handleCustomerSignIn = async () => {
     setErrors({});
     const newErrors: Record<string, string> = {};
 
-    if (!customerPhone.trim()) {
-      newErrors.customerPhone = 'Phone number is required';
-    } else if (!/^\d{10}$/.test(customerPhone.trim())) {
-      newErrors.customerPhone = 'Enter a valid 10-digit number';
+    const cleanId = customerIdentifier.trim();
+    if (!cleanId) {
+      newErrors.customerIdentifier = 'Customer ID or Mobile Number is required';
+    } else if (cleanId.length < 3) {
+      newErrors.customerIdentifier = 'Please enter a valid Customer ID or Mobile Number';
     }
 
     if (!customerPin) {
-      newErrors.customerPin = 'PIN is required';
-    } else if (!/^\d{4}$/.test(customerPin)) {
-      newErrors.customerPin = 'PIN must be 4 digits';
+      newErrors.customerPin = '4-digit login PIN is required';
+    } else if (!/^\d{4}$/.test(customerPin.trim())) {
+      newErrors.customerPin = 'PIN must be exactly 4 digits';
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -135,7 +125,7 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
     setLoading(true);
     try {
-      const result = await loginAsCustomer(customerPhone.trim(), customerPin);
+      const result = await loginAsCustomer(cleanId, customerPin.trim());
       setLoading(false);
       if (result.success) {
         resetForm();
@@ -148,7 +138,7 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
   };
 
-  // Registration handler - Admin
+  // Registration handler - Admin only
   const handleAdminSignUp = async () => {
     setErrors({});
     const newErrors: Record<string, string> = {};
@@ -180,7 +170,7 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
         const proceedToSignIn = () => {
           setSuccessModal(null);
-          setAuthMode('signin');
+          setAdminAuthMode('signin');
           setLoginTab('admin');
           setAdminUsername(registeredUser);
           setAdminPassword(registeredPass);
@@ -196,7 +186,7 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           title: 'Successfully Registered! 🎉',
           greeting: `Welcome, ${registeredUser}!`,
           message:
-            'Your Chit Organizer (Admin) account has been registered in the centralized cloud database. You can now sign in with your credentials on any device (iPhone, Android, web) to manage chit schemes and payments.',
+            'Your Chit Organizer (Admin) account has been registered in the centralized cloud database. You can now sign in with your credentials on any device to manage customers, lending terms, and collections.',
           details: [
             { label: 'Role', value: 'Chit Organizer (Admin)' },
             { label: 'Username', value: registeredUser },
@@ -207,84 +197,6 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         });
       } else {
         setErrors({ registration: result.error || 'Failed to create admin' });
-      }
-    } catch (err: any) {
-      setLoading(false);
-      setErrors({ registration: err?.message || 'Registration failed' });
-    }
-  };
-
-  // Registration handler - Customer
-  const handleCustomerSignUp = async () => {
-    setErrors({});
-    const newErrors: Record<string, string> = {};
-
-    if (!regCustName.trim()) newErrors.regCustName = 'Full Name is required';
-    if (!regCustPhone.trim()) {
-      newErrors.regCustPhone = 'Phone number is required';
-    } else if (!/^\d{10}$/.test(regCustPhone.trim())) {
-      newErrors.regCustPhone = 'Phone must be exactly 10 digits';
-    }
-
-    if (!regCustPin) {
-      newErrors.regCustPin = 'PIN is required';
-    } else if (!/^\d{4}$/.test(regCustPin)) {
-      newErrors.regCustPin = 'PIN must be exactly 4 digits';
-    }
-
-    if (regCustPin !== regCustConfirm) {
-      newErrors.regCustConfirm = 'PINs do not match';
-    }
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const result = await registerCustomer(
-        regCustName.trim(),
-        regCustPhone.trim(),
-        regCustPin
-      );
-      setLoading(false);
-      if (result.success) {
-        const registeredName = regCustName.trim();
-        const registeredPhone = regCustPhone.trim();
-        const registeredPin = regCustPin;
-        resetForm();
-
-        const proceedToSignIn = () => {
-          setSuccessModal(null);
-          setAuthMode('signin');
-          setLoginTab('customer');
-          setCustomerPhone(registeredPhone);
-          setCustomerPin(registeredPin);
-          setRegistrationBanner({
-            role: 'customer',
-            text: `Member account for "${registeredName}" registered successfully! Please click "Sign In as Member" below.`,
-          });
-        };
-
-        setSuccessModal({
-          visible: true,
-          role: 'customer',
-          title: 'Successfully Registered! 🎉',
-          greeting: `Welcome, ${registeredName}!`,
-          message:
-            'Your Member account has been registered in the centralized cloud database. You can now sign in using your registered mobile number and 4-digit PIN from any device to track chit schemes and download payment receipts.',
-          details: [
-            { label: 'Role', value: 'Chit Member (Customer)' },
-            { label: 'Member Name', value: registeredName },
-            { label: 'Phone Number', value: registeredPhone },
-            { label: 'Cloud Sync', value: 'Centralized Database' },
-            { label: 'Status', value: 'Active & Ready' },
-          ],
-          onContinue: proceedToSignIn,
-        });
-      } else {
-        setErrors({ registration: result.error || 'Failed to register customer' });
       }
     } catch (err: any) {
       setLoading(false);
@@ -307,41 +219,13 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               <Text style={styles.logoText}>CF</Text>
             </View>
             <Text style={styles.brandName}>ChitFlow</Text>
-            <Text style={styles.brandSub}>Secure Recurring Payment System</Text>
+            <Text style={styles.brandSub}>Direct Lending & Ledger Management</Text>
             <View style={styles.cloudBadge}>
               <View style={[styles.cloudDot, { backgroundColor: isCloudConnected ? '#10B981' : '#F59E0B' }]} />
               <Text style={styles.cloudBadgeText}>
                 {isCloudConnected ? '☁️ Central Cloud Sync Online' : '💾 Local Storage Mode'}
               </Text>
             </View>
-          </View>
-
-          {/* Mode Switcher (Sign In vs Sign Up) */}
-          <View style={styles.modeContainer}>
-            <TouchableOpacity
-              style={[styles.modeBtn, authMode === 'signin' ? styles.modeBtnActive : null]}
-              onPress={() => {
-                setAuthMode('signin');
-                resetForm();
-              }}
-            >
-              <Text style={[styles.modeText, authMode === 'signin' ? styles.modeTextActive : null]}>
-                Sign In
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.modeBtn, authMode === 'signup' ? styles.modeBtnActive : null]}
-              onPress={() => {
-                setAuthMode('signup');
-                resetForm();
-                setRegistrationBanner(null);
-              }}
-            >
-              <Text style={[styles.modeText, authMode === 'signup' ? styles.modeTextActive : null]}>
-                Sign Up / Register
-              </Text>
-            </TouchableOpacity>
           </View>
 
           {/* Portal Switcher (Admin vs Customer) */}
@@ -352,9 +236,10 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 setLoginTab('admin');
                 setErrors({});
               }}
+              activeOpacity={0.8}
             >
               <Text style={[styles.tabText, loginTab === 'admin' ? styles.tabTextActive : null]}>
-                Organizer (Admin)
+                🏢 Organizer (Admin)
               </Text>
             </TouchableOpacity>
 
@@ -362,19 +247,53 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               style={[styles.tabBtn, loginTab === 'customer' ? styles.tabBtnActive : null]}
               onPress={() => {
                 setLoginTab('customer');
+                setAdminAuthMode('signin');
                 setErrors({});
               }}
+              activeOpacity={0.8}
             >
               <Text style={[styles.tabText, loginTab === 'customer' ? styles.tabTextActive : null]}>
-                Member (Customer)
+                👤 Member (Customer)
               </Text>
             </TouchableOpacity>
           </View>
 
+          {/* Admin Sub-tabs: Sign In vs Register Admin */}
+          {loginTab === 'admin' && (
+            <View style={styles.modeContainer}>
+              <TouchableOpacity
+                style={[styles.modeBtn, adminAuthMode === 'signin' ? styles.modeBtnActive : null]}
+                onPress={() => {
+                  setAdminAuthMode('signin');
+                  resetForm();
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.modeText, adminAuthMode === 'signin' ? styles.modeTextActive : null]}>
+                  Sign In
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modeBtn, adminAuthMode === 'signup' ? styles.modeBtnActive : null]}
+                onPress={() => {
+                  setAdminAuthMode('signup');
+                  resetForm();
+                  setRegistrationBanner(null);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.modeText, adminAuthMode === 'signup' ? styles.modeTextActive : null]}>
+                  Register Admin Account
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Credentials Card Form */}
           <Card style={styles.loginCard} padding={SPACING.lg}>
             {/* Friendly Registration Success Banner */}
-            {registrationBanner && authMode === 'signin' ? (
+            {registrationBanner && loginTab === 'admin' && adminAuthMode === 'signin' ? (
               <View style={styles.successBanner}>
                 <View style={styles.successBannerIconBox}>
                   <Text style={styles.successBannerEmoji}>🎉</Text>
@@ -396,243 +315,190 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             {errors.login ? <Text style={styles.errorBanner}>{errors.login}</Text> : null}
             {errors.registration ? <Text style={styles.errorBanner}>{errors.registration}</Text> : null}
 
-            {authMode === 'signin' ? (
-              // ==================== SIGN IN FORMS ====================
-              loginTab === 'admin' ? (
-                // Admin Sign In
-                <View>
-                  <Text style={styles.formTitle}>Admin Portal</Text>
-                  <Text style={styles.formSub}>Log in to manage collections and members</Text>
+            {/* ==================== ADMIN FORMS ==================== */}
+            {loginTab === 'admin' && adminAuthMode === 'signin' && (
+              <View>
+                <Text style={styles.formTitle}>Organizer Portal</Text>
+                <Text style={styles.formSub}>Log in to manage customer ledgers, payouts & collections</Text>
 
-                  {admins.length === 0 && (
-                    <View style={styles.cleanSlateBanner}>
-                      <Text style={styles.cleanSlateIcon}>ℹ️</Text>
-                      <View style={{ flex: 1, marginLeft: SPACING.xs }}>
-                        <Text style={styles.cleanSlateTitle}>No Admin Registered Yet</Text>
-                        <Text style={styles.cleanSlateText}>
-                          Switch to the "Sign Up / Register" tab above to create your first Admin account.
-                        </Text>
-                      </View>
+                {admins.length === 0 && (
+                  <View style={styles.cleanSlateBanner}>
+                    <Text style={styles.cleanSlateIcon}>ℹ️</Text>
+                    <View style={{ flex: 1, marginLeft: SPACING.xs }}>
+                      <Text style={styles.cleanSlateTitle}>No Admin Registered Yet</Text>
+                      <Text style={styles.cleanSlateText}>
+                        Click "Register Admin Account" above to create your organizer credentials.
+                      </Text>
                     </View>
-                  )}
+                  </View>
+                )}
 
-                  <FormInput
-                    label="Username"
-                    placeholder="Enter admin username"
-                    value={adminUsername}
-                    onChangeText={(val) => {
-                      setAdminUsername(val);
-                      setErrors({});
-                    }}
-                    autoCapitalize="none"
-                    error={errors.adminUsername}
-                  />
+                <FormInput
+                  label="Username"
+                  placeholder="Enter admin username"
+                  value={adminUsername}
+                  onChangeText={(val) => {
+                    setAdminUsername(val);
+                    setErrors({});
+                  }}
+                  autoCapitalize="none"
+                  error={errors.adminUsername}
+                />
 
-                  <FormInput
-                    label="Password"
-                    placeholder="Enter password"
-                    value={adminPassword}
-                    onChangeText={(val) => {
-                      setAdminPassword(val);
-                      setErrors({});
-                    }}
-                    secureTextEntry={true}
-                    error={errors.adminPassword}
-                    autoCapitalize="none"
-                  />
+                <FormInput
+                  label="Password"
+                  placeholder="Enter password"
+                  value={adminPassword}
+                  onChangeText={(val) => {
+                    setAdminPassword(val);
+                    setErrors({});
+                  }}
+                  secureTextEntry={true}
+                  error={errors.adminPassword}
+                  autoCapitalize="none"
+                />
 
-                  <Button
-                    title="Sign In as Admin"
-                    onPress={handleAdminSignIn}
-                    loading={loading}
-                    style={styles.submitBtn}
-                    size="large"
-                  />
+                <Button
+                  title="Sign In as Organizer"
+                  onPress={handleAdminSignIn}
+                  loading={loading}
+                  style={styles.submitBtn}
+                  size="large"
+                />
+              </View>
+            )}
+
+            {loginTab === 'admin' && adminAuthMode === 'signup' && (
+              <View>
+                <Text style={styles.formTitle}>Create Admin Account</Text>
+                <Text style={styles.formSub}>Register credentials for a new chit organizer</Text>
+
+                <FormInput
+                  label="Choose Username"
+                  placeholder="e.g. manager1"
+                  value={regAdminUser}
+                  onChangeText={(val) => {
+                    setRegAdminUser(val);
+                    setErrors({});
+                  }}
+                  autoCapitalize="none"
+                  error={errors.regAdminUser}
+                />
+
+                <FormInput
+                  label="Password (min 6 characters)"
+                  placeholder="Create secure password"
+                  value={regAdminPass}
+                  onChangeText={(val) => {
+                    setRegAdminPass(val);
+                    setErrors({});
+                  }}
+                  secureTextEntry={true}
+                  error={errors.regAdminPass}
+                  autoCapitalize="none"
+                />
+
+                <FormInput
+                  label="Confirm Password"
+                  placeholder="Confirm password"
+                  value={regAdminConfirm}
+                  onChangeText={(val) => {
+                    setRegAdminConfirm(val);
+                    setErrors({});
+                  }}
+                  secureTextEntry={true}
+                  error={errors.regAdminConfirm}
+                  autoCapitalize="none"
+                />
+
+                <Button
+                  title="Register Admin Account"
+                  onPress={handleAdminSignUp}
+                  loading={loading}
+                  style={styles.submitBtn}
+                  size="large"
+                />
+              </View>
+            )}
+
+            {/* ==================== CUSTOMER FORM (SIGN IN ONLY) ==================== */}
+            {loginTab === 'customer' && (
+              <View>
+                <View style={styles.memberHeaderRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.formTitle}>Member Portal</Text>
+                    <Text style={styles.formSub}>Sign in with your Customer ID or Mobile Number</Text>
+                  </View>
+                  <View style={styles.customerPill}>
+                    <Text style={styles.customerPillText}>CUSTOMER</Text>
+                  </View>
                 </View>
-              ) : (
-                // Customer Sign In
-                <View>
-                  <Text style={styles.formTitle}>Member Portal</Text>
-                  <Text style={styles.formSub}>Log in to view balance and pay installments</Text>
 
-                  {customers.length === 0 && (
-                    <View style={styles.cleanSlateBanner}>
-                      <Text style={styles.cleanSlateIcon}>ℹ️</Text>
-                      <View style={{ flex: 1, marginLeft: SPACING.xs }}>
-                        <Text style={styles.cleanSlateTitle}>No Members Registered Yet</Text>
-                        <Text style={styles.cleanSlateText}>
-                          Members can self-register via "Sign Up / Register" above or be registered by the Admin in the organizer portal.
-                        </Text>
-                      </View>
+                {customers.length === 0 && (
+                  <View style={styles.cleanSlateBanner}>
+                    <Text style={styles.cleanSlateIcon}>ℹ️</Text>
+                    <View style={{ flex: 1, marginLeft: SPACING.xs }}>
+                      <Text style={styles.cleanSlateTitle}>No Customers Added Yet</Text>
+                      <Text style={styles.cleanSlateText}>
+                        Customer accounts are created and activated by the Admin in the Organizer Portal.
+                      </Text>
                     </View>
-                  )}
+                  </View>
+                )}
 
-                  <FormInput
-                    label="Registered Phone Number"
-                    placeholder="e.g. 9876543210"
-                    value={customerPhone}
-                    onChangeText={(val) => {
-                      setCustomerPhone(val);
-                      setErrors({});
-                    }}
-                    keyboardType="numeric"
-                    maxLength={10}
-                    error={errors.customerPhone}
-                  />
+                <FormInput
+                  label="Customer ID or Mobile Number"
+                  placeholder="e.g. CUST-101 or 0987654321"
+                  value={customerIdentifier}
+                  onChangeText={(val) => {
+                    setCustomerIdentifier(val);
+                    setErrors({});
+                  }}
+                  autoCapitalize="characters"
+                  error={errors.customerIdentifier}
+                />
 
-                  <FormInput
-                    label="4-Digit Account PIN"
-                    placeholder="Enter PIN"
-                    value={customerPin}
-                    onChangeText={(val) => {
-                      setCustomerPin(val);
-                      setErrors({});
-                    }}
-                    keyboardType="numeric"
-                    maxLength={4}
-                    secureTextEntry={true}
-                    error={errors.customerPin}
-                  />
+                <FormInput
+                  label="4-Digit Login PIN"
+                  placeholder="Enter 4-digit PIN (e.g. 1234)"
+                  value={customerPin}
+                  onChangeText={(val) => {
+                    setCustomerPin(val);
+                    setErrors({});
+                  }}
+                  keyboardType="numeric"
+                  maxLength={4}
+                  secureTextEntry={true}
+                  error={errors.customerPin}
+                />
 
-                  <Button
-                    title="Sign In as Member"
-                    onPress={handleCustomerSignIn}
-                    loading={loading}
-                    style={styles.submitBtn}
-                    size="large"
-                    variant="success"
-                  />
+                <Button
+                  title="Sign In as Member"
+                  onPress={handleCustomerSignIn}
+                  loading={loading}
+                  style={styles.submitBtn}
+                  size="large"
+                  variant="success"
+                />
+
+                {/* Clear informational card for customers */}
+                <View style={styles.memberInfoCallout}>
+                  <Text style={styles.memberInfoIcon}>💡</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.memberInfoTitle}>Direct Lending Enrollment</Text>
+                    <Text style={styles.memberInfoText}>
+                      Customers do not need to register. Your Customer ID, 4-digit PIN, and lending terms are activated directly by the organizer. Sign in with the credentials provided to you.
+                    </Text>
+                  </View>
                 </View>
-              )
-            ) : (
-              // ==================== SIGN UP FORMS ====================
-              loginTab === 'admin' ? (
-                // Admin Sign Up (Registration)
-                <View>
-                  <Text style={styles.formTitle}>Create Admin Account</Text>
-                  <Text style={styles.formSub}>Register credentials for a new chit organizer</Text>
-
-                  <FormInput
-                    label="Choose Username"
-                    placeholder="e.g. manager1"
-                    value={regAdminUser}
-                    onChangeText={(val) => {
-                      setRegAdminUser(val);
-                      setErrors({});
-                    }}
-                    autoCapitalize="none"
-                    error={errors.regAdminUser}
-                  />
-
-                  <FormInput
-                    label="Password (min 6 characters)"
-                    placeholder="Create secure password"
-                    value={regAdminPass}
-                    onChangeText={(val) => {
-                      setRegAdminPass(val);
-                      setErrors({});
-                    }}
-                    secureTextEntry={true}
-                    error={errors.regAdminPass}
-                    autoCapitalize="none"
-                  />
-
-                  <FormInput
-                    label="Confirm Password"
-                    placeholder="Confirm password"
-                    value={regAdminConfirm}
-                    onChangeText={(val) => {
-                      setRegAdminConfirm(val);
-                      setErrors({});
-                    }}
-                    secureTextEntry={true}
-                    error={errors.regAdminConfirm}
-                    autoCapitalize="none"
-                  />
-
-                  <Button
-                    title="Register Admin Account"
-                    onPress={handleAdminSignUp}
-                    loading={loading}
-                    style={styles.submitBtn}
-                    size="large"
-                  />
-                </View>
-              ) : (
-                // Customer Sign Up (Registration)
-                <View>
-                  <Text style={styles.formTitle}>Register Member Account</Text>
-                  <Text style={styles.formSub}>Create a profile to access your chit records</Text>
-
-                  <FormInput
-                    label="Full Name"
-                    placeholder="e.g. Ravi Kumar"
-                    value={regCustName}
-                    onChangeText={(val) => {
-                      setRegCustName(val);
-                      setErrors({});
-                    }}
-                    error={errors.regCustName}
-                  />
-
-                  <FormInput
-                    label="Phone Number"
-                    placeholder="e.g. 9999988888"
-                    value={regCustPhone}
-                    onChangeText={(val) => {
-                      setRegCustPhone(val);
-                      setErrors({});
-                    }}
-                    keyboardType="numeric"
-                    maxLength={10}
-                    error={errors.regCustPhone}
-                  />
-
-                  <FormInput
-                    label="Set 4-Digit Login PIN"
-                    placeholder="e.g. 1234"
-                    value={regCustPin}
-                    onChangeText={(val) => {
-                      setRegCustPin(val);
-                      setErrors({});
-                    }}
-                    keyboardType="numeric"
-                    maxLength={4}
-                    secureTextEntry={true}
-                    error={errors.regCustPin}
-                  />
-
-                  <FormInput
-                    label="Confirm 4-Digit PIN"
-                    placeholder="Confirm PIN"
-                    value={regCustConfirm}
-                    onChangeText={(val) => {
-                      setRegCustConfirm(val);
-                      setErrors({});
-                    }}
-                    keyboardType="numeric"
-                    maxLength={4}
-                    secureTextEntry={true}
-                    error={errors.regCustConfirm}
-                  />
-
-                  <Button
-                    title="Register Member Account"
-                    onPress={handleCustomerSignUp}
-                    loading={loading}
-                    style={styles.submitBtn}
-                    size="large"
-                    variant="success"
-                  />
-                </View>
-              )
+              </View>
             )}
           </Card>
           
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Registration Success Celebration Modal */}
+      {/* Admin Registration Success Celebration Modal */}
       {successModal && (
         <Modal
           visible={successModal.visible}
@@ -653,12 +519,12 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               <Text style={styles.successModalMessage}>{successModal.message}</Text>
 
               <View style={styles.detailsContainer}>
-                {successModal.details.map((item, idx) => (
+                {successModal.details.map((item, index) => (
                   <View
-                    key={idx}
+                    key={item.label}
                     style={[
                       styles.detailRow,
-                      idx < successModal.details.length - 1 ? styles.detailRowBorder : null,
+                      index < successModal.details.length - 1 ? styles.detailRowBorder : null,
                     ]}
                   >
                     <Text style={styles.detailLabel}>{item.label}</Text>
@@ -670,17 +536,13 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               <TouchableOpacity
                 style={styles.successActionButton}
                 onPress={successModal.onContinue}
-                activeOpacity={0.85}
+                activeOpacity={0.8}
               >
-                <Text style={styles.successActionButtonText}>
-                  {successModal.role === 'admin'
-                    ? 'Sign In as Organizer →'
-                    : 'Sign In as Member →'}
-                </Text>
+                <Text style={styles.successActionButtonText}>Sign In Now →</Text>
               </TouchableOpacity>
 
               <Text style={styles.successFooterNote}>
-                💡 Your credentials have been pre-filled for easy sign in.
+                Credentials synced to centralized cloud database
               </Text>
             </View>
           </View>
@@ -699,16 +561,18 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     flexGrow: 1,
     justifyContent: 'center',
-    paddingBottom: 40,
+    maxWidth: 500,
+    width: '100%',
+    alignSelf: 'center',
   },
   brandContainer: {
     alignItems: 'center',
     marginBottom: SPACING.lg,
   },
   logoBadge: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
+    width: 64,
+    height: 64,
+    borderRadius: 20,
     backgroundColor: COLORS.secondary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -716,27 +580,28 @@ const styles = StyleSheet.create({
     ...SHADOWS.md,
   },
   logoText: {
+    ...TYPOGRAPHY.h1,
     color: COLORS.white,
-    fontSize: 22,
     fontWeight: '800',
   },
   brandName: {
-    ...TYPOGRAPHY.h2,
+    ...TYPOGRAPHY.h1,
     color: COLORS.white,
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   brandSub: {
-    ...TYPOGRAPHY.caption,
+    ...TYPOGRAPHY.captionBold,
     color: COLORS.textLight,
     marginTop: 2,
+    letterSpacing: 0.5,
   },
   cloudBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
-    borderRadius: 20,
+    borderRadius: 12,
     marginTop: SPACING.xs + 2,
   },
   cloudDot: {
@@ -750,6 +615,30 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 11,
     fontWeight: '600',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: SPACING.sm + 2,
+  },
+  tabBtn: {
+    flex: 1,
+    paddingVertical: SPACING.sm + 3,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  tabBtnActive: {
+    backgroundColor: COLORS.white,
+    ...SHADOWS.sm,
+  },
+  tabText: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.textLight,
+  },
+  tabTextActive: {
+    color: COLORS.primary,
   },
   modeContainer: {
     flexDirection: 'row',
@@ -771,38 +660,34 @@ const styles = StyleSheet.create({
   modeText: {
     ...TYPOGRAPHY.bodyMediumBold,
     color: COLORS.textLight,
+    fontSize: 13,
   },
   modeTextActive: {
     color: COLORS.white,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: SPACING.md,
-  },
-  tabBtn: {
-    flex: 1,
-    paddingVertical: SPACING.sm + 2,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  tabBtnActive: {
-    backgroundColor: COLORS.white,
-    ...SHADOWS.sm,
-  },
-  tabText: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.textLight,
-  },
-  tabTextActive: {
-    color: COLORS.primary,
   },
   loginCard: {
     backgroundColor: COLORS.white,
     borderWidth: 1,
     borderColor: COLORS.border,
+  },
+  memberHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  customerPill: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginLeft: SPACING.xs,
+  },
+  customerPillText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#15803D',
+    fontSize: 10,
+    letterSpacing: 0.5,
   },
   formTitle: {
     ...TYPOGRAPHY.h3,
@@ -825,58 +710,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: SPACING.md,
     textAlign: 'center',
-  },
-  hintText: {
-    ...TYPOGRAPHY.caption,
-    textAlign: 'center',
-    color: COLORS.textMuted,
-    marginTop: SPACING.md,
-    fontStyle: 'italic',
-  },
-  // Scheme Selector styles for self-registration
-  schemeSectionLabel: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.primaryLight,
-    marginBottom: SPACING.xs + 2,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  schemeSelectContainer: {
-    marginBottom: SPACING.md,
-  },
-  schemeCard: {
-    backgroundColor: COLORS.white,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    padding: SPACING.md - 2,
-    marginBottom: SPACING.sm,
-  },
-  schemeCardSelected: {
-    borderColor: COLORS.success,
-    backgroundColor: COLORS.successLight,
-  },
-  schemeName: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.text,
-  },
-  schemeSub: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-  schemeTextSelected: {
-    color: COLORS.success,
-  },
-  schemeSubSelected: {
-    color: COLORS.success,
-    opacity: 0.8,
-  },
-  schemeErrorText: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.danger,
-    marginBottom: SPACING.sm,
-    marginTop: -SPACING.xs,
   },
   cleanSlateBanner: {
     flexDirection: 'row',
@@ -901,6 +734,33 @@ const styles = StyleSheet.create({
   cleanSlateText: {
     ...TYPOGRAPHY.caption,
     color: '#0284C7',
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  memberInfoCallout: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    padding: SPACING.sm + 2,
+    marginTop: SPACING.lg,
+    alignItems: 'flex-start',
+  },
+  memberInfoIcon: {
+    fontSize: 16,
+    marginRight: SPACING.xs + 2,
+    marginTop: 1,
+  },
+  memberInfoTitle: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.primary,
+    fontSize: 12,
+  },
+  memberInfoText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
     fontSize: 11,
     marginTop: 2,
     lineHeight: 15,

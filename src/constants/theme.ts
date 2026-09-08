@@ -102,4 +102,14 @@ export const TYPOGRAPHY = {
     fontWeight: '700' as const,
     color: COLORS.text,
   },
+  hero: {
+    fontSize: 32,
+    fontWeight: '800' as const,
+    color: COLORS.text,
+  },
+  bodySmall: {
+    fontSize: 12,
+    fontWeight: '400' as const,
+    color: COLORS.textMuted,
+  },
 };

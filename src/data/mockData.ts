@@ -13,13 +13,18 @@ export interface EnrolledScheme {
 }
 
 export interface Customer {
-  id: string;
+  id: string; // Unique Customer ID e.g. CUST-101
   name: string;
   phone: string;
   pin: string; // 4-digit PIN for login
-  schemeId: string;
-  amountGiven: number;
-  collectionAmount: number;
+  schemeId?: string;
+  amountGiven: number; // Total amount to be repaid (mirrors totalAmount)
+  totalAmount?: number; // Total amount to collect (payoutAmount + interestAmount)
+  payoutAmount?: number; // Net cash disbursed to customer
+  interestAmount?: number; // Total interest charged
+  interestRate?: number; // Interest rate percentage
+  collectionAmount: number; // Installment amount to collect
+  durationInstallments?: number; // Number of installment cycles
   frequency: 'daily' | 'every_3_days' | 'weekly' | 'monthly';
   startDate: string;
   nextPaymentDate: string;

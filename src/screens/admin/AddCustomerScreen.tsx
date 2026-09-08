@@ -1,5 +1,16 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, Modal, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useRef } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+  Linking,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useChitData } from '../../context/ChitDataContext';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
@@ -9,101 +20,266 @@ import Card from '../../components/Card';
 import { StatusBar } from 'expo-status-bar';
 
 export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { schemes, addCustomer } = useChitData();
+  const { customers, addCustomer } = useChitData();
+  const scrollRef = useRef<ScrollView>(null);
+
+  // Compute next suggested Customer ID e.g. CUST-101
+  let maxIdNum = 100;
+  customers.forEach((c) => {
+    const match = c.id.match(/^CUST-(\d+)$/i);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxIdNum) maxIdNum = num;
+    }
+  });
+  const suggestedId = `CUST-${maxIdNum + 1}`;
 
   // Form fields
+  const [customerId, setCustomerId] = useState(suggestedId);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
-  const [selectedSchemeId, setSelectedSchemeId] = useState('');
-  const [amountGiven, setAmountGiven] = useState('');
-  const [collectionAmount, setCollectionAmount] = useState('');
-  const [frequency, setFrequency] = useState<'daily' | 'every_3_days' | 'weekly' | 'monthly'>('daily');
 
-  // Form errors
+  // Lending terms
+  const [payoutAmount, setPayoutAmount] = useState('50000');
+  const [interestAmount, setInterestAmount] = useState('5000');
+  const [totalAmount, setTotalAmount] = useState('55000');
+  const [collectionAmount, setCollectionAmount] = useState('1100');
+  const [frequency, setFrequency] = useState<'daily' | 'every_3_days' | 'weekly' | 'monthly'>('daily');
+  const [durationInstallments, setDurationInstallments] = useState('50');
+
+  // Form errors & submission states
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitError, setSubmitError] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Success modal state
   const [successCustomer, setSuccessCustomer] = useState<{
+    id: string;
     name: string;
     phone: string;
     pin: string;
-    schemeName: string;
+    payoutAmount: number;
+    totalAmount: number;
+    collectionAmount: number;
+    frequency: string;
   } | null>(null);
 
-  const handleSchemeSelect = (schemeId: string) => {
-    setSelectedSchemeId(schemeId);
-    const scheme = schemes.find((s) => s.id === schemeId);
-    if (scheme) {
-      setAmountGiven(scheme.totalAmount.toString());
-      setCollectionAmount(scheme.collectionAmount.toString());
-      setFrequency(scheme.frequency);
+  // Input change handlers that auto-clear errors
+  const handleNameChange = (val: string) => {
+    setName(val);
+    if (errors.name) setErrors((prev) => ({ ...prev, name: '' }));
+    if (submitError) setSubmitError('');
+  };
+
+  const handlePhoneChange = (val: string) => {
+    setPhone(val);
+    if (errors.phone) setErrors((prev) => ({ ...prev, phone: '' }));
+    if (submitError) setSubmitError('');
+  };
+
+  const handlePinChange = (val: string) => {
+    setPin(val);
+    if (errors.pin) setErrors((prev) => ({ ...prev, pin: '' }));
+    if (submitError) setSubmitError('');
+  };
+
+  // Auto-compute Total Installments / Cycles: TI/C = Total Repayment / Installment
+  const computeCycles = (repayment: number, installment: number): string => {
+    if (repayment > 0 && installment > 0) {
+      const cycles = Math.ceil(repayment / installment);
+      return cycles > 0 ? cycles.toString() : '';
+    }
+    return '';
+  };
+
+  // Auto-calculate Total Repayment & Installments when Payout changes
+  const handlePayoutChange = (val: string) => {
+    setPayoutAmount(val);
+    if (errors.payoutAmount) setErrors((prev) => ({ ...prev, payoutAmount: '' }));
+    if (submitError) setSubmitError('');
+    const p = parseFloat(val) || 0;
+    const i = parseFloat(interestAmount) || 0;
+    const tot = p + i;
+    setTotalAmount(tot > 0 ? tot.toString() : '');
+    const col = parseFloat(collectionAmount) || 0;
+    if (col > 0 && tot > 0) {
+      setDurationInstallments(computeCycles(tot, col));
+    }
+  };
+
+  // Auto-calculate Total Repayment & Installments when Interest changes
+  const handleInterestChange = (val: string) => {
+    setInterestAmount(val);
+    if (errors.interestAmount) setErrors((prev) => ({ ...prev, interestAmount: '' }));
+    if (submitError) setSubmitError('');
+    const p = parseFloat(payoutAmount) || 0;
+    const i = parseFloat(val) || 0;
+    const tot = p + i;
+    setTotalAmount(tot > 0 ? tot.toString() : '');
+    const col = parseFloat(collectionAmount) || 0;
+    if (col > 0 && tot > 0) {
+      setDurationInstallments(computeCycles(tot, col));
+    }
+  };
+
+  // Auto-calculate Installments / Cycles when Total Repayment changes directly
+  const handleTotalChange = (val: string) => {
+    setTotalAmount(val);
+    if (errors.totalAmount) setErrors((prev) => ({ ...prev, totalAmount: '' }));
+    if (submitError) setSubmitError('');
+    const tot = parseFloat(val) || 0;
+    const p = parseFloat(payoutAmount) || 0;
+    if (tot >= p && p > 0) {
+      setInterestAmount((tot - p).toString());
+    }
+    const col = parseFloat(collectionAmount) || 0;
+    if (col > 0 && tot > 0) {
+      setDurationInstallments(computeCycles(tot, col));
+    }
+  };
+
+  // TI/C = amount repayment / installment (Auto-calculate Total Installments when Installment changes)
+  const handleCollectionChange = (val: string) => {
+    setCollectionAmount(val);
+    if (errors.collectionAmount) setErrors((prev) => ({ ...prev, collectionAmount: '' }));
+    if (submitError) setSubmitError('');
+    const col = parseFloat(val) || 0;
+    const tot = parseFloat(totalAmount) || 0;
+    if (col > 0 && tot > 0) {
+      setDurationInstallments(computeCycles(tot, col));
+    }
+  };
+
+  // If user adjusts Total Installments / Cycles manually, adjust Installment amount
+  const handleDurationChange = (val: string) => {
+    setDurationInstallments(val);
+    if (submitError) setSubmitError('');
+    const dur = parseInt(val, 10) || 0;
+    const tot = parseFloat(totalAmount) || 0;
+    if (dur > 0 && tot > 0) {
+      setCollectionAmount(Math.round(tot / dur).toString());
     }
   };
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
+    const missing: string[] = [];
 
-    if (!name.trim()) newErrors.name = 'Name is required';
+    if (!name.trim()) {
+      newErrors.name = 'Customer name is required';
+      missing.push('Customer Name');
+    }
+
     if (!phone.trim()) {
-      newErrors.phone = 'Phone number is required';
+      newErrors.phone = 'Mobile number is required';
+      missing.push('10-digit Mobile Number');
     } else if (!/^\d{10}$/.test(phone.trim())) {
-      newErrors.phone = 'Phone must be a valid 10-digit number';
+      newErrors.phone = 'Phone must be exactly 10 digits';
+      missing.push('valid 10-digit Mobile Number');
     }
 
-    if (!pin) {
-      newErrors.pin = 'Login PIN is required';
-    } else if (!/^\d{4}$/.test(pin)) {
-      newErrors.pin = 'PIN must be exactly 4 digits';
+    if (!pin.trim()) {
+      newErrors.pin = '4-digit login PIN is required';
+      missing.push('4-digit PIN');
+    } else if (!/^\d{4}$/.test(pin.trim())) {
+      newErrors.pin = 'PIN must be exactly 4 digits (e.g. 1234)';
+      missing.push('exact 4-digit PIN');
     }
 
-    if (!selectedSchemeId) newErrors.scheme = 'Please select a chit scheme';
+    const pAmt = parseFloat(payoutAmount);
+    if (!payoutAmount || isNaN(pAmt) || pAmt <= 0) {
+      newErrors.payoutAmount = 'Payout amount must be greater than 0';
+      missing.push('Payout Amount');
+    }
 
-    const amtGiven = parseFloat(amountGiven);
-    if (!amountGiven) {
-      newErrors.amountGiven = 'Total scheme amount is required';
-    } else if (isNaN(amtGiven) || amtGiven <= 0) {
-      newErrors.amountGiven = 'Amount must be greater than 0';
+    const totAmt = parseFloat(totalAmount);
+    if (!totalAmount || isNaN(totAmt) || totAmt <= 0) {
+      newErrors.totalAmount = 'Total repayment amount must be greater than 0';
+      missing.push('Total Repayment');
     }
 
     const colAmt = parseFloat(collectionAmount);
-    if (!collectionAmount) {
-      newErrors.collectionAmount = 'Collection amount is required';
-    } else if (isNaN(colAmt) || colAmt <= 0) {
+    if (!collectionAmount || isNaN(colAmt) || colAmt <= 0) {
       newErrors.collectionAmount = 'Collection amount must be greater than 0';
-    } else if (colAmt > amtGiven) {
-      newErrors.collectionAmount = 'Collection amount cannot exceed total scheme amount';
+      missing.push('Collection Amount');
     }
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+
+    if (Object.keys(newErrors).length > 0) {
+      setSubmitError(`⚠️ Please fill in: ${missing.join(', ')}.`);
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+      return false;
+    }
+
+    setSubmitError('');
+    return true;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    setSubmitError('');
     if (!validate()) return;
 
+    setIsSubmitting(true);
+    const cleanId = (customerId.trim() || suggestedId).toUpperCase();
     const registeredName = name.trim();
     const registeredPhone = phone.trim();
     const registeredPin = pin.trim();
-    const chosenScheme = schemes.find((s) => s.id === selectedSchemeId);
+    const pAmt = parseFloat(payoutAmount);
+    const iAmt = parseFloat(interestAmount) || 0;
+    const totAmt = parseFloat(totalAmount) || (pAmt + iAmt);
+    const colAmt = parseFloat(collectionAmount);
+    const dur = parseInt(durationInstallments, 10) || 50;
+    const rate = pAmt > 0 ? (iAmt / pAmt) * 100 : 0;
 
-    addCustomer({
+    const res = await addCustomer({
+      id: cleanId,
       name: registeredName,
       phone: registeredPhone,
       pin: registeredPin,
-      schemeId: selectedSchemeId,
-      amountGiven: parseFloat(amountGiven),
-      collectionAmount: parseFloat(collectionAmount),
+      payoutAmount: pAmt,
+      interestAmount: iAmt,
+      interestRate: rate,
+      totalAmount: totAmt,
+      amountGiven: totAmt,
+      collectionAmount: colAmt,
       frequency,
+      durationInstallments: dur,
       startDate: new Date().toISOString(),
+      schemeId: '',
     });
 
-    setSuccessCustomer({
-      name: registeredName,
-      phone: registeredPhone,
-      pin: registeredPin,
-      schemeName: chosenScheme ? chosenScheme.name : 'Chit Scheme',
-    });
+    setIsSubmitting(false);
+
+    if (res.success) {
+      setSuccessCustomer({
+        id: cleanId,
+        name: registeredName,
+        phone: registeredPhone,
+        pin: registeredPin,
+        payoutAmount: pAmt,
+        totalAmount: totAmt,
+        collectionAmount: colAmt,
+        frequency,
+      });
+    } else {
+      setSubmitError(`⚠️ ${res.error || 'Could not create customer account.'}`);
+      Alert.alert('Registration Failed', res.error || 'Could not create customer account.');
+    }
+  };
+
+  const handleShareWhatsApp = async () => {
+    if (!successCustomer) return;
+    const msg = `Hello ${successCustomer.name},\nYour ChitFlow account has been created!\n\n📋 Customer ID: ${successCustomer.id}\n🔐 Login PIN: ${successCustomer.pin}\n\n💰 Principal Disbursed: ₹${successCustomer.payoutAmount.toLocaleString('en-IN')}\n💵 Total Repayable: ₹${successCustomer.totalAmount.toLocaleString('en-IN')}\n📅 Installment: ₹${successCustomer.collectionAmount.toLocaleString('en-IN')} (${successCustomer.frequency})\n\nYou can sign in using your Customer ID or Phone number at any time.`;
+    const cleanPhone = successCustomer.phone.replace(/[^0-9]/g, '');
+    const waPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+    const url = `https://wa.me/${waPhone}?text=${encodeURIComponent(msg)}`;
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Error', 'Could not open WhatsApp.');
+    }
   };
 
   return (
@@ -120,115 +296,175 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        {/* Form Inputs */}
-        <FormInput
-          label="Customer Name"
-          placeholder="e.g. Ravi Kumar"
-          value={name}
-          onChangeText={setName}
-          error={errors.name}
-        />
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Customer ID & Login Credentials */}
+          <Text style={styles.sectionHeaderTitle}>Customer Identification & Login</Text>
+          <Card style={styles.sectionCard}>
+            <FormInput
+              label="Customer ID (Unique Identifier)"
+              placeholder="e.g. CUST-101"
+              value={customerId}
+              onChangeText={setCustomerId}
+              autoCapitalize="characters"
+              error={errors.customerId}
+            />
 
-        <FormInput
-          label="Phone Number"
-          placeholder="e.g. 9876543210"
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="numeric"
-          maxLength={10}
-          error={errors.phone}
-        />
+            <FormInput
+              label="Customer Full Name *"
+              placeholder="e.g. Ramesh Kumar"
+              value={name}
+              onChangeText={handleNameChange}
+              error={errors.name}
+            />
 
-        <FormInput
-          label="Set Member Login PIN (4 Digits)"
-          placeholder="e.g. 1234"
-          value={pin}
-          onChangeText={setPin}
-          keyboardType="numeric"
-          maxLength={4}
-          secureTextEntry={true}
-          error={errors.pin}
-        />
+            <FormInput
+              label="Mobile Number * (Used for Login & Reminders)"
+              placeholder="e.g. 9876543210"
+              value={phone}
+              onChangeText={handlePhoneChange}
+              keyboardType="numeric"
+              maxLength={10}
+              error={errors.phone}
+            />
 
-        {/* Scheme Selector */}
-        <Text style={styles.sectionLabel}>Select Chit Scheme</Text>
-        {errors.scheme ? <Text style={styles.errorText}>{errors.scheme}</Text> : null}
-        <View style={styles.schemeContainer}>
-          {schemes.map((scheme) => {
-            const isSelected = selectedSchemeId === scheme.id;
-            return (
-              <TouchableOpacity
-                key={scheme.id}
-                style={[
-                  styles.schemeCard,
-                  isSelected ? styles.schemeCardSelected : null,
-                ]}
-                onPress={() => handleSchemeSelect(scheme.id)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.schemeName, isSelected ? styles.schemeTextSelected : null]}>
-                  {scheme.name}
-                </Text>
-                <Text style={[styles.schemeSub, isSelected ? styles.schemeSubSelected : null]}>
-                  ₹{scheme.totalAmount.toLocaleString('en-IN')} · ₹{scheme.collectionAmount.toLocaleString('en-IN')}/{scheme.frequency}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+            <FormInput
+              label="Set 4-Digit Login PIN *"
+              placeholder="e.g. 1234"
+              value={pin}
+              onChangeText={handlePinChange}
+              keyboardType="numeric"
+              maxLength={4}
+              secureTextEntry={false}
+              error={errors.pin}
+            />
+          </Card>
 
-        {/* Financial Fields (autofilled but editable) */}
-        <FormInput
-          label="Total Scheme Amount (₹)"
-          placeholder="e.g. 50000"
-          value={amountGiven}
-          onChangeText={setAmountGiven}
-          keyboardType="numeric"
-          error={errors.amountGiven}
-        />
+          {/* Direct Lending Terms Card */}
+          <Text style={styles.sectionHeaderTitle}>Lending & Collection Terms</Text>
+          <Card style={styles.sectionCard}>
+            <View style={styles.twoColRow}>
+              <View style={{ flex: 1, marginRight: SPACING.sm }}>
+                <FormInput
+                  label="Payout Given (₹)"
+                  placeholder="e.g. 50000"
+                  value={payoutAmount}
+                  onChangeText={handlePayoutChange}
+                  keyboardType="numeric"
+                  error={errors.payoutAmount}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <FormInput
+                  label="Interest Amount (₹)"
+                  placeholder="e.g. 5000"
+                  value={interestAmount}
+                  onChangeText={handleInterestChange}
+                  keyboardType="numeric"
+                  error={errors.interestAmount}
+                />
+              </View>
+            </View>
 
-        <FormInput
-          label="Collection Amount (₹)"
-          placeholder="e.g. 1000"
-          value={collectionAmount}
-          onChangeText={setCollectionAmount}
-          keyboardType="numeric"
-          error={errors.collectionAmount}
-        />
+            <View style={styles.twoColRow}>
+              <View style={{ flex: 1, marginRight: SPACING.sm }}>
+                <FormInput
+                  label="Total Repayment (₹)"
+                  placeholder="e.g. 55000"
+                  value={totalAmount}
+                  onChangeText={handleTotalChange}
+                  keyboardType="numeric"
+                  error={errors.totalAmount}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <FormInput
+                  label="Installment (₹)"
+                  placeholder="e.g. 1100"
+                  value={collectionAmount}
+                  onChangeText={handleCollectionChange}
+                  keyboardType="numeric"
+                  error={errors.collectionAmount}
+                />
+              </View>
+            </View>
 
-        {/* Frequency selector (if overriding) */}
-        <Text style={styles.sectionLabel}>Collection Frequency</Text>
-        <View style={styles.freqContainer}>
-          {(['daily', 'every_3_days', 'weekly', 'monthly'] as const).map((freqOption) => {
-            const isSelected = frequency === freqOption;
-            const label = freqOption.replace(/_/g, ' ');
-            return (
-              <TouchableOpacity
-                key={freqOption}
-                style={[
-                  styles.freqBtn,
-                  isSelected ? styles.freqBtnSelected : null,
-                ]}
-                onPress={() => setFrequency(freqOption)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.freqBtnText, isSelected ? styles.freqBtnTextSelected : null]}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+            <FormInput
+              label="Total Installments / Cycles"
+              placeholder="e.g. 50"
+              value={durationInstallments}
+              onChangeText={handleDurationChange}
+              keyboardType="numeric"
+            />
 
-        <Button
-          title="Register Customer"
-          onPress={handleSubmit}
-          style={styles.submitBtn}
-          size="large"
-        />
-      </ScrollView>
-    </KeyboardAvoidingView>
+            {/* Collection Frequency */}
+            <Text style={styles.fieldLabel}>Collection Frequency</Text>
+            <View style={styles.freqContainer}>
+              {(['daily', 'every_3_days', 'weekly', 'monthly'] as const).map((freqOption) => {
+                const isSelected = frequency === freqOption;
+                const label = freqOption.replace(/_/g, ' ');
+                return (
+                  <TouchableOpacity
+                    key={freqOption}
+                    style={[styles.freqBtn, isSelected ? styles.freqBtnSelected : null]}
+                    onPress={() => setFrequency(freqOption)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.freqBtnText, isSelected ? styles.freqBtnTextSelected : null]}>
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Card>
+
+          {/* Live Summary Preview */}
+          <Card style={styles.summaryCard}>
+            <View style={styles.summaryBadge}>
+              <Text style={styles.summaryBadgeText}>TERMS SUMMARY</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Customer ID:</Text>
+              <Text style={styles.summaryVal}>{customerId || suggestedId}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Amount Disbursed (Payout):</Text>
+              <Text style={styles.summaryVal}>₹{(parseFloat(payoutAmount) || 0).toLocaleString('en-IN')}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Total Customer Repays:</Text>
+              <Text style={[styles.summaryVal, { color: COLORS.secondary, fontWeight: '700' }]}>
+                ₹{(parseFloat(totalAmount) || 0).toLocaleString('en-IN')}
+              </Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Collection Plan:</Text>
+              <Text style={styles.summaryVal}>
+                ₹{(parseFloat(collectionAmount) || 0).toLocaleString('en-IN')} / {frequency.replace(/_/g, ' ')} ({durationInstallments || 50} times)
+              </Text>
+            </View>
+          </Card>
+
+          {/* Prominent Error Banner above Button */}
+          {submitError ? (
+            <View style={styles.errorAlertBanner}>
+              <Text style={styles.errorAlertIcon}>⚠️</Text>
+              <Text style={styles.errorAlertText}>{submitError}</Text>
+            </View>
+          ) : null}
+
+          <Button
+            title={isSubmitting ? "Creating Account & Activating..." : "Save Customer & Activate Terms"}
+            onPress={handleSubmit}
+            style={styles.submitBtn}
+            size="large"
+          />
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Registration Success Modal */}
       {successCustomer && (
@@ -249,61 +485,62 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
                 </View>
               </View>
 
-              <Text style={styles.successModalTitle}>Customer Registered Successfully! 🎉</Text>
+              <Text style={styles.successModalTitle}>Customer Added Successfully!</Text>
               <Text style={styles.successModalGreeting}>
-                "{successCustomer.name}" is now enrolled
+                "{successCustomer.name}" is now registered
               </Text>
-              <Text style={styles.successModalMessage}>
-                Member account has been created and assigned to the selected chit scheme. They can sign in using their phone and PIN.
-              </Text>
+
+              <View style={styles.custIdHighlightBox}>
+                <Text style={styles.custIdHighlightLabel}>CUSTOMER ID (LOGIN ID)</Text>
+                <Text style={styles.custIdHighlightVal}>{successCustomer.id}</Text>
+              </View>
 
               <View style={styles.detailsContainer}>
                 <View style={[styles.detailRow, styles.detailRowBorder]}>
-                  <Text style={styles.detailLabel}>Customer Name</Text>
-                  <Text style={styles.detailValue}>{successCustomer.name}</Text>
-                </View>
-                <View style={[styles.detailRow, styles.detailRowBorder]}>
-                  <Text style={styles.detailLabel}>Phone Number</Text>
+                  <Text style={styles.detailLabel}>Mobile Number</Text>
                   <Text style={styles.detailValue}>{successCustomer.phone}</Text>
                 </View>
                 <View style={[styles.detailRow, styles.detailRowBorder]}>
-                  <Text style={styles.detailLabel}>Assigned Scheme</Text>
-                  <Text style={styles.detailValue}>{successCustomer.schemeName}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Login PIN</Text>
+                  <Text style={styles.detailLabel}>4-Digit Login PIN</Text>
                   <Text style={[styles.detailValue, { color: COLORS.secondary, fontWeight: '700' }]}>
                     {successCustomer.pin}
+                  </Text>
+                </View>
+                <View style={[styles.detailRow, styles.detailRowBorder]}>
+                  <Text style={styles.detailLabel}>Disbursed Payout</Text>
+                  <Text style={styles.detailValue}>₹{successCustomer.payoutAmount.toLocaleString('en-IN')}</Text>
+                </View>
+                <View style={[styles.detailRow, styles.detailRowBorder]}>
+                  <Text style={styles.detailLabel}>Total Repayment</Text>
+                  <Text style={[styles.detailValue, { fontWeight: '700' }]}>
+                    ₹{successCustomer.totalAmount.toLocaleString('en-IN')}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Installment Schedule</Text>
+                  <Text style={styles.detailValue}>
+                    ₹{successCustomer.collectionAmount.toLocaleString('en-IN')} / {successCustomer.frequency.replace(/_/g, ' ')}
                   </Text>
                 </View>
               </View>
 
               <TouchableOpacity
-                style={styles.successPrimaryBtn}
+                style={styles.waShareBtn}
+                onPress={handleShareWhatsApp}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.waShareBtnText}>💬 Share Credentials on WhatsApp</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.successDoneBtn}
                 onPress={() => {
                   setSuccessCustomer(null);
                   navigation.goBack();
                 }}
-                activeOpacity={0.85}
+                activeOpacity={0.8}
               >
-                <Text style={styles.successPrimaryBtnText}>Done / Back to Customers →</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.successSecondaryBtn}
-                onPress={() => {
-                  setSuccessCustomer(null);
-                  setName('');
-                  setPhone('');
-                  setPin('');
-                  setSelectedSchemeId('');
-                  setAmountGiven('');
-                  setCollectionAmount('');
-                  setErrors({});
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.successSecondaryBtnText}>+ Register Another Member</Text>
+                <Text style={styles.successDoneBtnText}>Done</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -324,78 +561,59 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.md,
     paddingBottom: SPACING.md,
+    backgroundColor: COLORS.primary,
   },
   backButton: {
-    paddingVertical: SPACING.sm,
-    paddingRight: SPACING.md,
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 8,
+    marginRight: SPACING.md,
   },
   backButtonText: {
-    ...TYPOGRAPHY.bodyLarge,
+    ...TYPOGRAPHY.bodyMediumBold,
     color: COLORS.white,
-    fontWeight: '600',
   },
   headerTitle: {
     ...TYPOGRAPHY.h2,
     color: COLORS.white,
-    marginLeft: SPACING.sm,
   },
   scrollContent: {
-    padding: SPACING.lg,
-    backgroundColor: COLORS.background,
-    flexGrow: 1,
-  },
-  sectionLabel: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.primaryLight,
-    marginBottom: SPACING.sm,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  schemeContainer: {
-    marginBottom: SPACING.md,
-  },
-  schemeCard: {
-    backgroundColor: COLORS.white,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    borderRadius: 12,
     padding: SPACING.md,
-    marginBottom: SPACING.sm,
   },
-  schemeCardSelected: {
-    borderColor: COLORS.secondary,
-    backgroundColor: COLORS.secondaryLight,
+  sectionHeaderTitle: {
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
+    color: COLORS.white,
+    marginBottom: SPACING.xs + 2,
+    marginTop: SPACING.sm,
   },
-  schemeName: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.text,
+  sectionCard: {
+    marginBottom: SPACING.md,
+    padding: SPACING.md,
   },
-  schemeSub: {
-    ...TYPOGRAPHY.caption,
+  twoColRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  fieldLabel: {
+    ...TYPOGRAPHY.captionBold,
     color: COLORS.textMuted,
-    marginTop: 2,
-  },
-  schemeTextSelected: {
-    color: COLORS.secondary,
-  },
-  schemeSubSelected: {
-    color: COLORS.secondary,
-    opacity: 0.8,
+    marginBottom: SPACING.xs,
   },
   freqContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -SPACING.xs,
-    marginBottom: SPACING.lg,
+    gap: SPACING.xs,
+    marginBottom: SPACING.sm,
   },
   freqBtn: {
-    backgroundColor: COLORS.white,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    borderRadius: 10,
     paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    margin: SPACING.xs,
+    paddingHorizontal: SPACING.sm + 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
     alignItems: 'center',
     justifyContent: 'center',
     flexGrow: 1,
@@ -412,17 +630,64 @@ const styles = StyleSheet.create({
   freqBtnTextSelected: {
     color: COLORS.white,
   },
+  summaryCard: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+    borderWidth: 1,
+    marginBottom: SPACING.md,
+    padding: SPACING.md,
+  },
+  summaryBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginBottom: SPACING.sm,
+  },
+  summaryBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 10,
+    color: '#0284C7',
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  summaryLabel: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textMuted,
+  },
+  summaryVal: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.primary,
+  },
+  errorAlertBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+    borderRadius: 12,
+    padding: SPACING.md,
+    marginTop: SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  errorAlertIcon: {
+    fontSize: 20,
+    marginRight: SPACING.sm,
+  },
+  errorAlertText: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#B91C1C',
+    flex: 1,
+    lineHeight: 20,
+  },
   submitBtn: {
-    marginTop: SPACING.md,
+    marginTop: SPACING.xs,
     marginBottom: SPACING.xl,
   },
-  errorText: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.danger,
-    marginBottom: SPACING.sm,
-    marginTop: -SPACING.xs,
-  },
-  // Success Modal Styles
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.75)',
@@ -440,24 +705,24 @@ const styles = StyleSheet.create({
     ...SHADOWS.lg,
   },
   successBadgeOuter: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#DCFCE7',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
   },
   successBadgeInner: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: '#BBF7D0',
     alignItems: 'center',
     justifyContent: 'center',
   },
   successBadgeEmoji: {
-    fontSize: 26,
+    fontSize: 24,
   },
   successModalTitle: {
     ...TYPOGRAPHY.h2,
@@ -466,18 +731,31 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   successModalGreeting: {
-    ...TYPOGRAPHY.bodyLarge,
-    fontWeight: '700',
-    color: COLORS.primary,
-    textAlign: 'center',
-    marginBottom: SPACING.xs,
-  },
-  successModalMessage: {
     ...TYPOGRAPHY.bodyMedium,
     color: COLORS.textMuted,
     textAlign: 'center',
-    lineHeight: 18,
     marginBottom: SPACING.md,
+  },
+  custIdHighlightBox: {
+    width: '100%',
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: SPACING.sm + 2,
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  custIdHighlightLabel: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 10,
+    color: '#3B82F6',
+  },
+  custIdHighlightVal: {
+    ...TYPOGRAPHY.h2,
+    fontSize: 22,
+    color: '#1D4ED8',
+    letterSpacing: 1,
   },
   detailsContainer: {
     width: '100%',
@@ -487,13 +765,13 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs,
-    marginBottom: SPACING.lg,
+    marginBottom: SPACING.md,
   },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: SPACING.sm + 1,
+    paddingVertical: SPACING.sm,
   },
   detailRowBorder: {
     borderBottomWidth: 1,
@@ -507,30 +785,30 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.bodyMediumBold,
     color: COLORS.primary,
   },
-  successPrimaryBtn: {
+  waShareBtn: {
     width: '100%',
-    backgroundColor: COLORS.secondary,
+    backgroundColor: '#25D366',
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: SPACING.sm,
     ...SHADOWS.md,
   },
-  successPrimaryBtnText: {
+  waShareBtnText: {
     ...TYPOGRAPHY.bodyLarge,
     fontWeight: '700',
     color: COLORS.white,
   },
-  successSecondaryBtn: {
+  successDoneBtn: {
     width: '100%',
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: SPACING.sm,
     backgroundColor: '#F1F5F9',
   },
-  successSecondaryBtnText: {
+  successDoneBtnText: {
     ...TYPOGRAPHY.bodyMediumBold,
     color: COLORS.textMuted,
   },

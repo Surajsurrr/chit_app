@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, FlatList } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Linking, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useChitData } from '../../context/ChitDataContext';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
@@ -8,37 +8,42 @@ import { formatDateShort, getPaymentStatusInfo, formatFrequency } from '../../ut
 import { StatusBar } from 'expo-status-bar';
 
 export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { getAdminStats, customers, payments, schemes, resetData, logout, getCustomerStats, isAdminProfileComplete } = useChitData();
+  const { getAdminStats, customers, payments, resetData, logout, getCustomerStats, isAdminProfileComplete } = useChitData();
   const stats = getAdminStats();
 
-  const enrolledCustomers = customers.filter(
-    (c) => Boolean(c.schemeId && c.schemeId.trim() !== '') || (c.enrolledSchemes && c.enrolledSchemes.length > 0)
-  );
-
-  const schemeDistribution = schemes.map((s) => {
-    const enrolledMembers = customers.filter(
-      (c) => c.schemeId === s.id || c.enrolledSchemeIds?.includes(s.id)
-    );
-    const totalAllocated = enrolledMembers.reduce((sum, c) => sum + c.amountGiven, 0);
+  // Categorize customers by due date status
+  const customerDueStatus = customers.map((c) => {
+    const custStats = getCustomerStats(c.id);
+    const info = getPaymentStatusInfo(c.nextPaymentDate, custStats.remainingAmount, c.frequency);
     return {
-      scheme: s,
-      members: enrolledMembers,
-      count: enrolledMembers.length,
-      totalAllocated,
+      customer: c,
+      stats: custStats,
+      info,
     };
   });
 
-  const overdueCustomers = customers.filter((c) => {
-    const custStats = getCustomerStats(c.id);
-    const info = getPaymentStatusInfo(c.nextPaymentDate, custStats.remainingAmount, c.frequency);
-    return info.isOverdue;
-  });
+  const overdueList = customerDueStatus.filter((item) => item.info.isOverdue && item.stats.remainingAmount > 0);
+  const dueTodayList = customerDueStatus.filter((item) => item.info.status === 'DUE_TODAY' && item.stats.remainingAmount > 0);
+  const upcomingList = customerDueStatus.filter((item) => item.info.status === 'UPCOMING' && item.stats.remainingAmount > 0);
 
-  const totalOverdueDues = overdueCustomers.reduce((sum, c) => sum + c.collectionAmount, 0);
-  const recentCollections = payments.slice(0, 5); // top 5 recent payments
+  const totalOverdueDues = overdueList.reduce((sum, item) => sum + item.customer.collectionAmount, 0);
+  const totalDisbursed = customers.reduce((sum, c) => sum + (c.payoutAmount || c.amountGiven || 0), 0);
+  const recentCollections = payments.slice(0, 5);
 
-  const handleReset = () => {
-    resetData();
+  const handleSendReminder = (cust: typeof customers[0], info: any, remAmount: number) => {
+    let msg = '';
+    if (info.isOverdue) {
+      msg = `Dear ${cust.name} (ID: ${cust.id}), this is an urgent reminder from ChitFlow. Your installment of ₹${cust.collectionAmount.toLocaleString('en-IN')} is OVERDUE (${info.statusText}). Remaining balance: ₹${remAmount.toLocaleString('en-IN')}. Please settle your payment immediately. Thank you!`;
+    } else if (info.status === 'DUE_TODAY') {
+      msg = `Dear ${cust.name} (ID: ${cust.id}), this is a reminder from ChitFlow. Your installment of ₹${cust.collectionAmount.toLocaleString('en-IN')} is due TODAY. Remaining balance: ₹${remAmount.toLocaleString('en-IN')}. Thank you!`;
+    } else {
+      msg = `Dear ${cust.name} (ID: ${cust.id}), this is a notification from ChitFlow. Your upcoming installment of ₹${cust.collectionAmount.toLocaleString('en-IN')} is due on ${info.formattedDueDate}. Thank you!`;
+    }
+
+    const cleanPhone = cust.phone.replace(/[^0-9]/g, '');
+    const waPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+    const url = `https://wa.me/${waPhone}?text=${encodeURIComponent(msg)}`;
+    Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open WhatsApp.'));
   };
 
   return (
@@ -47,7 +52,7 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>ChitFlow Admin</Text>
-          <Text style={styles.headerSubtitle}>Overview of Chit Operations</Text>
+          <Text style={styles.headerSubtitle}>Lending & Collection Operations</Text>
         </View>
         <View style={styles.headerRightRow}>
           <TouchableOpacity
@@ -63,8 +68,8 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Mandatory Admin Profile Alert Banner */}
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Admin Profile Setup Incomplete Warning */}
         {!isAdminProfileComplete && (
           <TouchableOpacity
             style={styles.profileWarningBanner}
@@ -75,68 +80,26 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
               <Text style={styles.profileWarningIcon}>⚠️</Text>
             </View>
             <View style={{ flex: 1, marginLeft: SPACING.sm }}>
-              <Text style={styles.profileWarningTitle}>Organizer Profile Incomplete (Mandatory)</Text>
+              <Text style={styles.profileWarningTitle}>Organizer Profile Incomplete</Text>
               <Text style={styles.profileWarningSub}>
-                Your chit schemes are currently HIDDEN from customers. Set up your profile details (Name, Phone, Email, Office Address) to unlock customer view.
+                Set up your organizer contact details (Name, Phone, Address) to personalize member receipts and messages.
               </Text>
-              <View style={styles.profileWarningActionRow}>
-                <Text style={styles.profileWarningActionText}>Complete Setup Now →</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        )}
-        {/* Overdue Payment Urgent Banner */}
-        {overdueCustomers.length > 0 && (
-          <TouchableOpacity
-            style={styles.overdueBannerCard}
-            onPress={() => navigation.navigate('Collections')}
-            activeOpacity={0.9}
-          >
-            <View style={styles.overdueBannerHeader}>
-              <View style={styles.overdueIconBadge}>
-                <Text style={styles.overdueIconText}>⚠️</Text>
-              </View>
-              <View style={{ flex: 1, marginLeft: SPACING.sm }}>
-                <Text style={styles.overdueBannerTitle}>
-                  {overdueCustomers.length} Customer{overdueCustomers.length > 1 ? 's' : ''} Overdue (Unpaid)
-                </Text>
-                <Text style={styles.overdueBannerSubtitle}>
-                  ₹{totalOverdueDues.toLocaleString('en-IN')} overdue installment dues pending
-                </Text>
-              </View>
-              <Text style={styles.overdueActionText}>View →</Text>
-            </View>
-
-            <View style={styles.overduePillRow}>
-              {overdueCustomers.slice(0, 3).map((c) => {
-                const custStats = getCustomerStats(c.id);
-                const info = getPaymentStatusInfo(c.nextPaymentDate, custStats.remainingAmount, c.frequency);
-                return (
-                  <View key={c.id} style={styles.overdueCustomerPill}>
-                    <Text style={styles.overduePillName}>{c.name}</Text>
-                    <Text style={styles.overduePillDays}>({info.statusText})</Text>
-                  </View>
-                );
-              })}
-              {overdueCustomers.length > 3 && (
-                <Text style={styles.overdueMoreText}>+{overdueCustomers.length - 3} more</Text>
-              )}
             </View>
           </TouchableOpacity>
         )}
 
-        {/* KPI Grid */}
+        {/* FINANCIAL SUMMARY KPIS */}
         <View style={styles.grid}>
           <View style={styles.gridCol}>
             <Card style={styles.statCard}>
               <Text style={styles.statLabel}>CUSTOMERS</Text>
-              <Text style={styles.statValue}>{stats.totalCustomers}</Text>
+              <Text style={styles.statValue}>{customers.length}</Text>
             </Card>
           </View>
           <View style={styles.gridCol}>
             <Card style={styles.statCard}>
-              <Text style={styles.statLabel}>TOTAL GIVEN</Text>
-              <Text style={styles.statValue}>₹{stats.totalGiven.toLocaleString('en-IN')}</Text>
+              <Text style={styles.statLabel}>TOTAL DISBURSED</Text>
+              <Text style={styles.statValue}>₹{totalDisbursed.toLocaleString('en-IN')}</Text>
             </Card>
           </View>
           <View style={styles.gridCol}>
@@ -156,23 +119,157 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
         {/* Collection Progress Card */}
         <Card style={styles.progressCard}>
           <View style={styles.progressHeader}>
-            <Text style={styles.progressTitle}>Collection Progress</Text>
+            <Text style={styles.progressTitle}>Overall Repayment Progress</Text>
             <Text style={styles.progressPercent}>{stats.collectionProgress.toFixed(1)}%</Text>
           </View>
           <View style={styles.progressBarBg}>
             <View style={[styles.progressBarFg, { width: `${stats.collectionProgress}%` }]} />
           </View>
           <Text style={styles.progressDesc}>
-            ₹{stats.totalCollected.toLocaleString('en-IN')} collected out of ₹{stats.totalGiven.toLocaleString('en-IN')} overall limit
+            ₹{stats.totalCollected.toLocaleString('en-IN')} collected out of ₹{stats.totalGiven.toLocaleString('en-IN')} total repayment obligation
           </Text>
         </Card>
 
-        {/* Customer Scheme Enrollments (Availed Schemes) Section */}
+        {/* DUE DATE REMINDERS & COLLECTION ALERTS SECTION */}
         <View style={styles.sectionHeader}>
           <View>
-            <Text style={styles.sectionTitle}>Customer Enrollments & Availed Schemes</Text>
+            <Text style={styles.sectionTitle}>🔔 Due Date Reminders & Alerts</Text>
             <Text style={styles.sectionSubtitleText}>
-              Live customer roster with availed scheme terms & repayment progress
+              Actionable repayment schedules and overdue follow-ups
+            </Text>
+          </View>
+        </View>
+
+        {/* Overdue Alert Card */}
+        {overdueList.length > 0 ? (
+          <Card style={styles.overdueSectionCard}>
+            <View style={styles.overdueHeaderRow}>
+              <View style={styles.overdueBadgeBox}>
+                <Text style={styles.overdueBadgeIcon}>⚠️</Text>
+                <Text style={styles.overdueBadgeText}>
+                  {overdueList.length} OVERDUE {overdueList.length === 1 ? 'INSTALLMENT' : 'INSTALLMENTS'}
+                </Text>
+              </View>
+              <Text style={styles.overdueTotalAmount}>
+                ₹{totalOverdueDues.toLocaleString('en-IN')} pending
+              </Text>
+            </View>
+
+            {overdueList.map(({ customer: c, stats: custStats, info }) => (
+              <View key={c.id} style={styles.dueItemRow}>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.custNameBadgeRow}>
+                    <Text style={styles.dueCustName}>{c.name}</Text>
+                    <View style={styles.custIdPill}>
+                      <Text style={styles.custIdPillText}>{c.id}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.overdueDaysText}>
+                    Due on {formatDateShort(c.nextPaymentDate)} · {info.statusText}
+                  </Text>
+                  <Text style={styles.dueAmountSub}>
+                    Installment: ₹{c.collectionAmount.toLocaleString('en-IN')} (Remaining: ₹{custStats.remainingAmount.toLocaleString('en-IN')})
+                  </Text>
+                </View>
+
+                <View style={styles.dueActionRow}>
+                  <TouchableOpacity
+                    style={styles.dueCollectBtn}
+                    onPress={() => navigation.navigate('Collections', { customerId: c.id })}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.dueCollectBtnText}>Collect</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.dueWaBtn}
+                    onPress={() => handleSendReminder(c, info, custStats.remainingAmount)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.dueWaBtnText}>💬 WhatsApp</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </Card>
+        ) : null}
+
+        {/* Due Today Card */}
+        {dueTodayList.length > 0 ? (
+          <Card style={styles.dueTodaySectionCard}>
+            <View style={styles.dueTodayHeaderRow}>
+              <Text style={styles.dueTodayTitle}>📅 Due Today ({dueTodayList.length})</Text>
+            </View>
+            {dueTodayList.map(({ customer: c, stats: custStats, info }) => (
+              <View key={c.id} style={styles.dueItemRow}>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.custNameBadgeRow}>
+                    <Text style={styles.dueCustName}>{c.name}</Text>
+                    <View style={styles.custIdPill}>
+                      <Text style={styles.custIdPillText}>{c.id}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.dueAmountSub}>
+                    Due: ₹{c.collectionAmount.toLocaleString('en-IN')} / {formatFrequency(c.frequency)}
+                  </Text>
+                </View>
+                <View style={styles.dueActionRow}>
+                  <TouchableOpacity
+                    style={styles.dueCollectBtn}
+                    onPress={() => navigation.navigate('Collections', { customerId: c.id })}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.dueCollectBtnText}>Collect</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.dueWaBtn}
+                    onPress={() => handleSendReminder(c, info, custStats.remainingAmount)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.dueWaBtnText}>💬 Remind</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </Card>
+        ) : null}
+
+        {/* Upcoming Collections in next few days */}
+        {upcomingList.length > 0 && overdueList.length === 0 && dueTodayList.length === 0 ? (
+          <Card style={styles.upcomingCard}>
+            <Text style={styles.upcomingTitle}>🗓️ Upcoming Collections</Text>
+            {upcomingList.slice(0, 3).map(({ customer: c, info }) => (
+              <View key={c.id} style={styles.upcomingItemRow}>
+                <View style={styles.custNameBadgeRow}>
+                  <Text style={styles.upcomingCustName}>{c.name}</Text>
+                  <View style={styles.custIdPill}>
+                    <Text style={styles.custIdPillText}>{c.id}</Text>
+                  </View>
+                </View>
+                <Text style={styles.upcomingDateText}>
+                  ₹{c.collectionAmount.toLocaleString('en-IN')} on {info.formattedDueDate}
+                </Text>
+              </View>
+            ))}
+          </Card>
+        ) : null}
+
+        {/* All up-to-date banner when no overdue or dues today */}
+        {overdueList.length === 0 && dueTodayList.length === 0 && (
+          <Card style={styles.allClearCard}>
+            <Text style={styles.allClearIcon}>✓</Text>
+            <Text style={styles.allClearTitle}>All Collections Up To Date!</Text>
+            <Text style={styles.allClearSub}>
+              No overdue payments today. All customer accounts are healthy.
+            </Text>
+          </Card>
+        )}
+
+        {/* CUSTOMER LEDGER ROSTER */}
+        <View style={styles.sectionHeader}>
+          <View>
+            <Text style={styles.sectionTitle}>Customer Lending Roster</Text>
+            <Text style={styles.sectionSubtitleText}>
+              Individual lending terms, disbursed payouts & balances
             </Text>
           </View>
           <TouchableOpacity onPress={() => navigation.navigate('Customers')}>
@@ -180,111 +277,79 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
           </TouchableOpacity>
         </View>
 
-        {enrolledCustomers.length === 0 ? (
+        {customers.length === 0 ? (
           <Card style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>No Customers Have Availed Schemes</Text>
+            <Text style={styles.emptyTitle}>No Customers Added Yet</Text>
             <Text style={styles.emptyText}>
-              When a customer selects and avails a scheme from their portal, their full profile and enrolled scheme details will appear here.
+              Click "+ Add Customer" in the top bar or Customers tab to create your first lending record.
             </Text>
           </Card>
         ) : (
-          enrolledCustomers.map((c) => {
+          customers.slice(0, 5).map((c) => {
             const custStats = getCustomerStats(c.id);
-            const enrolledScheme = schemes.find((s) => s.id === c.schemeId);
-            const snapshot = c.enrolledSchemes?.find((es) => es.schemeId === c.schemeId) || c.enrolledSchemes?.[0];
-            const schemeName = snapshot?.schemeName || enrolledScheme?.name || 'Availed Chit Scheme';
-            const totalValue = snapshot?.totalAmount || c.amountGiven || 0;
-            const interest = snapshot?.interestAmount ?? enrolledScheme?.interestAmount ?? 0;
-            const payout = snapshot?.payoutAmount ?? (enrolledScheme?.payoutAmount ?? Math.max(0, totalValue - interest));
-            const installment = snapshot?.collectionAmount || c.collectionAmount || 0;
-            const freq = snapshot?.frequency || c.frequency;
-            const paymentStatus = getPaymentStatusInfo(c.nextPaymentDate, custStats.remainingAmount, c.frequency);
+            const totalVal = c.totalAmount || c.amountGiven || 0;
+            const payout = c.payoutAmount ?? Math.max(0, totalVal - (c.interestAmount || 0));
+            const status = getPaymentStatusInfo(c.nextPaymentDate, custStats.remainingAmount, c.frequency);
 
             return (
-              <Card key={c.id} style={styles.enrolledCustCard} padding={SPACING.md}>
-                {/* Customer Details Row */}
-                <View style={styles.enrolledCustHeader}>
-                  <View style={styles.enrolledCustAvatar}>
-                    <Text style={styles.enrolledCustAvatarText}>
-                      {c.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1, marginLeft: SPACING.sm }}>
-                    <View style={styles.nameBadgeRow}>
-                      <Text style={styles.enrolledCustName}>{c.name}</Text>
-                      <View style={styles.availedSchemePill}>
-                        <Text style={styles.availedSchemePillText}>AVAILED</Text>
+              <Card key={c.id} style={styles.custRosterCard} padding={SPACING.md}>
+                <View style={styles.custRosterHeader}>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.custNameBadgeRow}>
+                      <Text style={styles.custRosterName}>{c.name}</Text>
+                      <View style={styles.custIdPill}>
+                        <Text style={styles.custIdPillText}>{c.id}</Text>
+                      </View>
+                      <View style={[styles.statusBadge, status.isOverdue && styles.statusBadgeOverdue]}>
+                        <Text style={[styles.statusBadgeText, status.isOverdue && styles.statusBadgeTextOverdue]}>
+                          {status.isOverdue ? 'Overdue' : 'Active'}
+                        </Text>
                       </View>
                     </View>
-                    <Text style={styles.enrolledCustPhone}>📞 +91 {c.phone}</Text>
-                    {c.email ? (
-                      <Text style={styles.enrolledCustMeta}>✉️ {c.email}</Text>
-                    ) : null}
-                    {c.address ? (
-                      <Text style={styles.enrolledCustMeta} numberOfLines={2}>
-                        📍 {c.address}{c.city ? `, ${c.city}` : ''}{c.pincode ? ` - ${c.pincode}` : ''}
-                      </Text>
-                    ) : null}
+                    <Text style={styles.custRosterPhone}>📞 +91 {c.phone}</Text>
                   </View>
                 </View>
 
-                <View style={styles.enrolledCustDivider} />
+                <View style={styles.custRosterDivider} />
 
-                {/* Availed Scheme Banner */}
-                <View style={styles.availedSchemeBanner}>
-                  <Text style={styles.availedSchemeIcon}>🪙</Text>
-                  <View style={{ flex: 1, marginLeft: SPACING.xs + 2 }}>
-                    <Text style={styles.availedSchemeName}>{schemeName}</Text>
-                    <Text style={styles.availedSchemeTerms}>
-                      ₹{installment.toLocaleString('en-IN')} / {formatFrequency(freq)} · Next Due: {formatDateShort(c.nextPaymentDate)}
-                    </Text>
+                <View style={styles.custRosterGrid}>
+                  <View style={styles.custGridCol}>
+                    <Text style={styles.custGridLabel}>DISBURSED</Text>
+                    <Text style={styles.custGridVal}>₹{payout.toLocaleString('en-IN')}</Text>
                   </View>
-                  <View style={[styles.statusBadge, paymentStatus.isOverdue && styles.statusBadgeOverdue]}>
-                    <Text style={[styles.statusBadgeText, paymentStatus.isOverdue && styles.statusBadgeTextOverdue]}>
-                      {paymentStatus.isOverdue ? 'Overdue' : 'Active'}
-                    </Text>
+                  <View style={styles.custGridCol}>
+                    <Text style={styles.custGridLabel}>TOTAL REPAY</Text>
+                    <Text style={styles.custGridVal}>₹{totalVal.toLocaleString('en-IN')}</Text>
+                  </View>
+                  <View style={styles.custGridCol}>
+                    <Text style={styles.custGridLabel}>PAID</Text>
+                    <Text style={styles.custGridValPaid}>₹{custStats.paidAmount.toLocaleString('en-IN')}</Text>
+                  </View>
+                  <View style={styles.custGridCol}>
+                    <Text style={styles.custGridLabel}>REMAINING</Text>
+                    <Text style={styles.custGridValRem}>₹{custStats.remainingAmount.toLocaleString('en-IN')}</Text>
                   </View>
                 </View>
 
-                {/* Scheme Financial Parameter Grid */}
-                <View style={styles.enrolledCustGrid}>
-                  <View style={styles.enrolledGridItem}>
-                    <Text style={styles.enrolledGridLabel}>SCHEME VALUE</Text>
-                    <Text style={styles.enrolledGridVal}>₹{totalValue.toLocaleString('en-IN')}</Text>
+                {/* Repayment Progress */}
+                <View style={styles.rosterProgressRow}>
+                  <View style={styles.rosterProgressBg}>
+                    <View style={[styles.rosterProgressFg, { width: `${custStats.progressPercentage}%` }]} />
                   </View>
-                  <View style={styles.enrolledGridItem}>
-                    <Text style={styles.enrolledGridLabel}>NET PAYOUT</Text>
-                    <Text style={styles.enrolledGridValHighlight}>₹{payout.toLocaleString('en-IN')}</Text>
-                  </View>
-                  <View style={styles.enrolledGridItem}>
-                    <Text style={styles.enrolledGridLabel}>PAID SO FAR</Text>
-                    <Text style={styles.enrolledGridValSuccess}>₹{custStats.paidAmount.toLocaleString('en-IN')}</Text>
-                  </View>
-                  <View style={styles.enrolledGridItem}>
-                    <Text style={styles.enrolledGridLabel}>REMAINING</Text>
-                    <Text style={styles.enrolledGridValWarning}>₹{custStats.remainingAmount.toLocaleString('en-IN')}</Text>
-                  </View>
+                  <Text style={styles.rosterProgressPercent}>{Math.round(custStats.progressPercentage)}%</Text>
                 </View>
 
-                {/* Repayment Progress Bar */}
-                <View style={styles.repaymentProgressBox}>
-                  <View style={styles.repaymentProgressHeader}>
-                    <Text style={styles.repaymentProgressLabel}>Repayment Progress</Text>
-                    <Text style={styles.repaymentProgressVal}>{custStats.progressPercentage.toFixed(0)}%</Text>
-                  </View>
-                  <View style={styles.repaymentProgressBg}>
-                    <View style={[styles.repaymentProgressFg, { width: `${custStats.progressPercentage}%` }]} />
-                  </View>
-                </View>
-
-                {/* Action Link to Customer Detail */}
-                <View style={styles.custCardFooterRow}>
+                {/* Footer Action */}
+                <View style={styles.custRosterFooter}>
+                  <Text style={styles.custRosterSchedule}>
+                    ₹{c.collectionAmount.toLocaleString('en-IN')} / {formatFrequency(c.frequency)} · Due: {formatDateShort(c.nextPaymentDate)}
+                  </Text>
                   <TouchableOpacity
-                    style={styles.viewCustDetailsBtn}
+                    style={styles.manageCustBtn}
                     onPress={() => navigation.navigate('CustomerDetail', { customerId: c.id })}
                     activeOpacity={0.8}
                   >
-                    <Text style={styles.viewCustDetailsBtnText}>Manage Customer & Collect Installment →</Text>
+                    <Text style={styles.manageCustBtnText}>Manage →</Text>
                   </TouchableOpacity>
                 </View>
               </Card>
@@ -292,56 +357,11 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
           })
         )}
 
-        {/* Scheme Allocations & Customer Distribution Section */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Scheme Allocations & Active Members</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Schemes')}>
-            <Text style={styles.sectionLink}>Manage Schemes →</Text>
-          </TouchableOpacity>
-        </View>
-
-        {schemeDistribution.map(({ scheme: s, members, count, totalAllocated }) => (
-          <Card key={s.id} style={styles.schemeAllocCard} padding={SPACING.md}>
-            <View style={styles.schemeAllocHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.schemeAllocName}>{s.name}</Text>
-                <Text style={styles.schemeAllocTerms}>
-                  ₹{s.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(s.frequency)} ({s.durationWeeksOrMonths} collections)
-                </Text>
-              </View>
-              <View style={[styles.schemeAllocBadge, count > 0 && styles.schemeAllocBadgeActive]}>
-                <Text style={[styles.schemeAllocBadgeText, count > 0 && styles.schemeAllocBadgeTextActive]}>
-                  {count} {count === 1 ? 'Member' : 'Members'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.schemeAllocDivider} />
-
-            <View style={styles.schemeAllocMetricsRow}>
-              <View>
-                <Text style={styles.schemeAllocMetricLabel}>TOTAL ALLOCATED</Text>
-                <Text style={styles.schemeAllocMetricVal}>
-                  ₹{totalAllocated.toLocaleString('en-IN')}
-                </Text>
-              </View>
-              <View style={{ alignItems: 'flex-end', flex: 1, marginLeft: SPACING.md }}>
-                <Text style={styles.schemeAllocMetricLabel}>MEMBERS ENROLLED</Text>
-                <Text style={styles.schemeAllocMembersText} numberOfLines={1}>
-                  {members.length > 0
-                    ? members.map((m) => m.name).join(', ')
-                    : 'No active members'}
-                </Text>
-              </View>
-            </View>
-          </Card>
-        ))}
-
-        {/* Recent Collections */}
+        {/* RECENT COLLECTIONS */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recent Collections</Text>
           <TouchableOpacity onPress={() => navigation.navigate('Collections')}>
-            <Text style={styles.sectionLink}>View All</Text>
+            <Text style={styles.sectionLink}>View All →</Text>
           </TouchableOpacity>
         </View>
 
@@ -371,8 +391,8 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
           ))
         )}
 
-        {/* System Reset for Testing */}
-        <TouchableOpacity style={styles.resetBtn} onPress={handleReset}>
+        {/* Data Reset (Test helper) */}
+        <TouchableOpacity style={styles.resetBtn} onPress={() => resetData()}>
           <Text style={styles.resetBtnText}>Reset Application Data</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -419,37 +439,38 @@ const styles = StyleSheet.create({
   },
   roleBtn: {
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    paddingHorizontal: SPACING.md,
+    paddingHorizontal: SPACING.md - 2,
     paddingVertical: SPACING.sm,
     borderRadius: 8,
   },
   roleBtnText: {
     ...TYPOGRAPHY.captionBold,
     color: COLORS.white,
+    fontSize: 12,
   },
   scrollContent: {
     padding: SPACING.lg,
-    paddingBottom: 110,
+    paddingBottom: SPACING.xl * 2,
     backgroundColor: COLORS.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     flexGrow: 1,
   },
   profileWarningBanner: {
-    backgroundColor: '#FFFBEB',
-    borderWidth: 1.5,
+    backgroundColor: '#FEF3C7',
     borderColor: '#F59E0B',
-    borderLeftWidth: 6,
-    borderRadius: 14,
+    borderWidth: 1,
+    borderRadius: 12,
     padding: SPACING.md,
-    marginBottom: SPACING.md,
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    ...SHADOWS.sm,
+    alignItems: 'center',
+    marginBottom: SPACING.md,
   },
   profileWarningIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#FEF3C7',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FDE68A',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -462,93 +483,9 @@ const styles = StyleSheet.create({
   },
   profileWarningSub: {
     ...TYPOGRAPHY.caption,
-    color: '#B45309',
-    marginTop: 3,
-    lineHeight: 18,
-  },
-  profileWarningActionRow: {
-    marginTop: SPACING.xs + 2,
-  },
-  profileWarningActionText: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#D97706',
-    fontWeight: '700',
-  },
-  overdueBannerCard: {
-    backgroundColor: '#FFF5F5',
-    borderWidth: 1.5,
-    borderColor: '#EF4444',
-    borderLeftWidth: 6,
-    borderRadius: 14,
-    padding: SPACING.md,
-    marginBottom: SPACING.md,
-    ...SHADOWS.sm,
-  },
-  overdueBannerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  overdueIconBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  overdueIconText: {
-    fontSize: 18,
-  },
-  overdueBannerTitle: {
-    ...TYPOGRAPHY.bodyLarge,
-    fontWeight: '700',
-    color: '#991B1B',
-  },
-  overdueBannerSubtitle: {
-    ...TYPOGRAPHY.caption,
-    color: '#B91C1C',
+    color: '#78350F',
+    lineHeight: 14,
     marginTop: 2,
-  },
-  overdueActionText: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: '#DC2626',
-    marginLeft: SPACING.xs,
-  },
-  overduePillRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.xs,
-    marginTop: SPACING.sm,
-    paddingTop: SPACING.xs,
-    borderTopWidth: 1,
-    borderTopColor: '#FECACA',
-  },
-  overdueCustomerPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 3,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#FCA5A5',
-  },
-  overduePillName: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#991B1B',
-    fontSize: 11,
-  },
-  overduePillDays: {
-    ...TYPOGRAPHY.caption,
-    color: '#DC2626',
-    fontSize: 10,
-    marginLeft: 3,
-  },
-  overdueMoreText: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#DC2626',
-    fontSize: 11,
-    alignSelf: 'center',
   },
   grid: {
     flexDirection: 'row',
@@ -558,24 +495,25 @@ const styles = StyleSheet.create({
   },
   gridCol: {
     width: '50%',
-    padding: SPACING.xs,
+    paddingHorizontal: SPACING.xs,
+    marginBottom: SPACING.sm,
   },
   statCard: {
     padding: SPACING.md,
-    height: 96,
-    justifyContent: 'center',
   },
   statLabel: {
     ...TYPOGRAPHY.captionBold,
     color: COLORS.textMuted,
+    fontSize: 10,
+    letterSpacing: 0.5,
   },
   statValue: {
-    ...TYPOGRAPHY.amountMedium,
-    color: COLORS.text,
+    ...TYPOGRAPHY.h3,
+    color: COLORS.primary,
     marginTop: 4,
   },
   collectedCard: {
-    borderLeftWidth: 4,
+    borderLeftWidth: 3,
     borderLeftColor: COLORS.success,
   },
   collectedLabel: {
@@ -585,7 +523,7 @@ const styles = StyleSheet.create({
     color: COLORS.success,
   },
   outstandingCard: {
-    borderLeftWidth: 4,
+    borderLeftWidth: 3,
     borderLeftColor: COLORS.danger,
   },
   outstandingLabel: {
@@ -596,12 +534,13 @@ const styles = StyleSheet.create({
   },
   progressCard: {
     marginBottom: SPACING.lg,
+    padding: SPACING.md,
   },
   progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.xs,
   },
   progressTitle: {
     ...TYPOGRAPHY.bodyMediumBold,
@@ -614,15 +553,14 @@ const styles = StyleSheet.create({
   },
   progressBarBg: {
     height: 8,
-    backgroundColor: COLORS.border,
+    backgroundColor: '#E2E8F0',
     borderRadius: 4,
     overflow: 'hidden',
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.xs,
   },
   progressBarFg: {
     height: '100%',
     backgroundColor: COLORS.secondary,
-    borderRadius: 4,
   },
   progressDesc: {
     ...TYPOGRAPHY.caption,
@@ -631,32 +569,304 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-    marginTop: SPACING.sm,
+    alignItems: 'flex-end',
+    marginBottom: SPACING.sm,
+    marginTop: SPACING.md,
   },
   sectionTitle: {
     ...TYPOGRAPHY.h3,
     color: COLORS.primary,
   },
+  sectionSubtitleText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginTop: 1,
+  },
   sectionLink: {
-    ...TYPOGRAPHY.bodyMediumBold,
+    ...TYPOGRAPHY.captionBold,
     color: COLORS.secondary,
   },
-  emptyCard: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: SPACING.lg,
+  // Overdue section
+  overdueSectionCard: {
+    borderColor: '#FCA5A5',
+    borderWidth: 1,
+    backgroundColor: '#FFF5F5',
     marginBottom: SPACING.md,
+    padding: SPACING.md,
   },
-  emptyText: {
-    ...TYPOGRAPHY.bodyMedium,
+  overdueHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+    paddingBottom: SPACING.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: '#FEE2E2',
+  },
+  overdueBadgeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  overdueBadgeIcon: {
+    fontSize: 16,
+  },
+  overdueBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#DC2626',
+    letterSpacing: 0.5,
+  },
+  overdueTotalAmount: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#DC2626',
+  },
+  dueItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.xs + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  custNameBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  dueCustName: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.primary,
+  },
+  custIdPill: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  custIdPillText: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 10,
+    color: '#2563EB',
+    fontFamily: 'monospace',
+  },
+  overdueDaysText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#DC2626',
+    fontSize: 11,
+    marginTop: 1,
+  },
+  dueAmountSub: {
+    ...TYPOGRAPHY.caption,
     color: COLORS.textMuted,
   },
-  collectionRowCard: {
-    marginBottom: SPACING.sm,
+  dueActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  dueCollectBtn: {
+    backgroundColor: COLORS.secondary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  dueCollectBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.white,
+    fontSize: 11,
+  },
+  dueWaBtn: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
     borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  dueWaBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#16A34A',
+    fontSize: 11,
+  },
+  // Due today section
+  dueTodaySectionCard: {
+    borderColor: '#FDE68A',
+    borderWidth: 1,
+    backgroundColor: '#FFFDF5',
+    marginBottom: SPACING.md,
+    padding: SPACING.md,
+  },
+  dueTodayHeaderRow: {
+    marginBottom: SPACING.xs,
+  },
+  dueTodayTitle: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#B45309',
+  },
+  // Upcoming
+  upcomingCard: {
+    backgroundColor: '#F8FAFC',
+    marginBottom: SPACING.md,
+    padding: SPACING.md,
+  },
+  upcomingTitle: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.primary,
+    marginBottom: SPACING.xs,
+  },
+  upcomingItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  upcomingCustName: {
+    ...TYPOGRAPHY.bodyMedium,
+    color: COLORS.primary,
+  },
+  upcomingDateText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.secondary,
+  },
+  // All clear
+  allClearCard: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+    borderWidth: 1,
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  allClearIcon: {
+    fontSize: 24,
+    color: '#16A34A',
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  allClearTitle: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: '#15803D',
+  },
+  allClearSub: {
+    ...TYPOGRAPHY.caption,
+    color: '#166534',
+    marginTop: 2,
+  },
+  // Roster card
+  custRosterCard: {
+    marginBottom: SPACING.sm + 2,
+  },
+  custRosterHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  custRosterName: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.primary,
+    fontSize: 15,
+  },
+  custRosterPhone: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  statusBadge: {
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  statusBadgeOverdue: {
+    backgroundColor: '#FEF2F2',
+  },
+  statusBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 10,
+    color: '#16A34A',
+  },
+  statusBadgeTextOverdue: {
+    color: '#DC2626',
+  },
+  custRosterDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: SPACING.xs + 2,
+  },
+  custRosterGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.xs,
+  },
+  custGridCol: {
+    alignItems: 'flex-start',
+  },
+  custGridLabel: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 9,
+    color: COLORS.textLight,
+  },
+  custGridVal: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.primary,
+    fontSize: 11,
+  },
+  custGridValPaid: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.success,
+    fontSize: 11,
+  },
+  custGridValRem: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.danger,
+    fontSize: 11,
+  },
+  rosterProgressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginBottom: SPACING.xs,
+  },
+  rosterProgressBg: {
+    flex: 1,
+    height: 4,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  rosterProgressFg: {
+    height: '100%',
+    backgroundColor: COLORS.success,
+  },
+  rosterProgressPercent: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 9,
+    color: COLORS.textMuted,
+  },
+  custRosterFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  custRosterSchedule: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    fontSize: 10,
+  },
+  manageCustBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  manageCustBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.secondary,
+    fontSize: 11,
+  },
+  collectionRowCard: {
+    marginBottom: SPACING.xs,
   },
   rowContent: {
     flexDirection: 'row',
@@ -665,12 +875,11 @@ const styles = StyleSheet.create({
   },
   rowName: {
     ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.text,
+    color: COLORS.primary,
   },
   rowDate: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textMuted,
-    marginTop: 2,
   },
   amountContainer: {
     alignItems: 'flex-end',
@@ -680,310 +889,37 @@ const styles = StyleSheet.create({
     color: COLORS.success,
   },
   rowReceiptBtn: {
-    marginTop: 4,
-    backgroundColor: COLORS.secondaryLight,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
-    borderRadius: 4,
+    marginTop: 2,
   },
   rowReceiptText: {
     ...TYPOGRAPHY.captionBold,
     color: COLORS.secondary,
-    fontSize: 9,
+    fontSize: 10,
+  },
+  emptyCard: {
+    alignItems: 'center',
+    paddingVertical: SPACING.lg,
+    marginBottom: SPACING.md,
+  },
+  emptyTitle: {
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginBottom: 4,
+  },
+  emptyText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    textAlign: 'center',
   },
   resetBtn: {
     alignSelf: 'center',
-    marginTop: SPACING.xxl,
-    marginBottom: SPACING.lg,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    borderWidth: 1,
-    borderColor: COLORS.danger,
-    borderRadius: 8,
+    paddingVertical: SPACING.md,
+    marginTop: SPACING.lg,
   },
   resetBtnText: {
     ...TYPOGRAPHY.captionBold,
-    color: COLORS.danger,
-  },
-  // Scheme Allocations Styles
-  schemeAllocCard: {
-    marginBottom: SPACING.sm + 2,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.white,
-  },
-  schemeAllocHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  schemeAllocName: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.primary,
-  },
-  schemeAllocTerms: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-  schemeAllocBadge: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: 3,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  schemeAllocBadgeActive: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#A7F3D0',
-  },
-  schemeAllocBadgeText: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.textMuted,
-    fontSize: 10,
-  },
-  schemeAllocBadgeTextActive: {
-    color: '#059669',
-  },
-  schemeAllocDivider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginVertical: SPACING.sm,
-  },
-  schemeAllocMetricsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  schemeAllocMetricLabel: {
-    ...TYPOGRAPHY.captionBold,
     color: COLORS.textLight,
-    fontSize: 9,
-    letterSpacing: 0.5,
-  },
-  schemeAllocMetricVal: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.success,
-    marginTop: 1,
-  },
-  schemeAllocMembersText: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.text,
-    marginTop: 1,
-  },
-  sectionSubtitleText: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textMuted,
-    marginTop: 2,
-    fontSize: 11,
-  },
-  enrolledCustCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginBottom: SPACING.md,
-    ...SHADOWS.sm,
-  },
-  enrolledCustHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  enrolledCustAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  enrolledCustAvatarText: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.white,
-  },
-  nameBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  enrolledCustName: {
-    ...TYPOGRAPHY.bodyLarge,
-    fontWeight: '700',
-    color: COLORS.text,
-    fontSize: 15,
-  },
-  availedSchemePill: {
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  availedSchemePillText: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#059669',
-    fontSize: 9,
-    letterSpacing: 0.5,
-  },
-  enrolledCustPhone: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.primary,
-    marginTop: 2,
-    fontSize: 12,
-  },
-  enrolledCustMeta: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textMuted,
-    marginTop: 2,
-    fontSize: 11,
-  },
-  enrolledCustDivider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginVertical: SPACING.sm + 2,
-  },
-  availedSchemeBanner: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: SPACING.sm + 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  availedSchemeIcon: {
-    fontSize: 20,
-  },
-  availedSchemeName: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.primary,
-    fontSize: 13,
-  },
-  availedSchemeTerms: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textMuted,
-    fontSize: 11,
-    marginTop: 1,
-  },
-  statusBadge: {
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-  },
-  statusBadgeOverdue: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FCA5A5',
-  },
-  statusBadgeText: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#059669',
-    fontSize: 10,
-  },
-  statusBadgeTextOverdue: {
-    color: '#DC2626',
-  },
-  enrolledCustGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: SPACING.sm,
-    marginBottom: SPACING.sm,
-  },
-  enrolledGridItem: {
-    flex: 1,
-  },
-  enrolledGridLabel: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.textLight,
-    fontSize: 9,
-    letterSpacing: 0.3,
-  },
-  enrolledGridVal: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.text,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  enrolledGridValHighlight: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.primary,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  enrolledGridValSuccess: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.success,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  enrolledGridValWarning: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: '#D97706',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  repaymentProgressBox: {
-    marginBottom: SPACING.sm,
-  },
-  repaymentProgressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  repaymentProgressLabel: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textMuted,
-    fontSize: 10,
-  },
-  repaymentProgressVal: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.text,
-    fontSize: 10,
-  },
-  repaymentProgressBg: {
-    height: 5,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  repaymentProgressFg: {
-    height: '100%',
-    backgroundColor: COLORS.success,
-    borderRadius: 3,
-  },
-  custCardFooterRow: {
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    paddingTop: SPACING.sm,
-    marginTop: 2,
-    alignItems: 'flex-end',
-  },
-  viewCustDetailsBtn: {
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  viewCustDetailsBtnText: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.primary,
-    fontSize: 11,
-  },
-  emptyTitle: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.text,
-    marginBottom: SPACING.xs,
-    textAlign: 'center',
   },
 });
 

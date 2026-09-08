@@ -43,13 +43,10 @@ export const PaymentsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   }
 
   const stats = getCustomerStats(customer.id);
-  const hasAvailedScheme = Boolean(
-    (customer.schemeId && customer.schemeId.trim() !== '') ||
-    (customer.enrolledSchemes && customer.enrolledSchemes.length > 0)
-  );
+  const totalVal = customer.totalAmount || customer.amountGiven || 0;
   const customerPayments = payments.filter((p) => p.customerId === customer.id);
   const statusInfo = getPaymentStatusInfo(customer.nextPaymentDate, stats.remainingAmount, customer.frequency);
-  const isOverdue = hasAvailedScheme && statusInfo.isOverdue;
+  const isOverdue = statusInfo.isOverdue && stats.remainingAmount > 0;
 
   const handleOpenPay = () => {
     setPayAmount(customer.collectionAmount.toString());
@@ -85,14 +82,14 @@ export const PaymentsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Due Card */}
-        {!hasAvailedScheme ? (
+        {totalVal === 0 ? (
           <Card style={styles.dueCard}>
             <View style={styles.noSchemeDueBox}>
               <Text style={styles.noSchemeDueIcon}>ℹ️</Text>
               <View style={{ flex: 1, marginLeft: SPACING.sm }}>
-                <Text style={styles.noSchemeDueTitle}>No Scheme Availed Yet</Text>
+                <Text style={styles.noSchemeDueTitle}>Awaiting Lending Terms</Text>
                 <Text style={styles.noSchemeDueText}>
-                  You do not have any active scheme installments. Complete your profile and enroll in a scheme to start payments.
+                  Your account has been created. The organizer will set up your loan disbursement amount and installment plan.
                 </Text>
               </View>
             </View>
@@ -128,7 +125,7 @@ export const PaymentsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         ) : (
           <Card style={[styles.dueCard, styles.settledCard]}>
             <Text style={styles.settledTitle}>✓ Account Fully Settled</Text>
-            <Text style={styles.settledDesc}>All recurring dues for this chit scheme are completed.</Text>
+            <Text style={styles.settledDesc}>All recurring dues for your loan are completed.</Text>
           </Card>
         )}
 

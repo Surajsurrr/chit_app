@@ -23,9 +23,9 @@ import { formatFrequency, formatDateShort, getPaymentStatusInfo } from '../../ut
 import { StatusBar } from 'expo-status-bar';
 
 export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { customers, schemes, getCustomerStats, recordPayment, selectCustomer, logout } = useChitData();
+  const { customers, getCustomerStats, recordPayment, selectCustomer } = useChitData();
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<'ALL' | 'ACTIVE' | 'SETTLED'>('ALL');
+  const [filterType, setFilterType] = useState<'ALL' | 'OVERDUE' | 'DUE_TODAY' | 'ACTIVE' | 'SETTLED'>('ALL');
 
   // Collection modal states
   const [isCollectModalVisible, setIsCollectModalVisible] = useState(false);
@@ -36,41 +36,34 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
 
   const customerData = customers.map((c) => {
     const stats = getCustomerStats(c.id);
-    const hasScheme = Boolean(
-      (c.schemeId && c.schemeId.trim() !== '') ||
-      (c.enrolledSchemes && c.enrolledSchemes.length > 0)
-    );
-    const scheme = hasScheme ? schemes.find((s) => s.id === c.schemeId) : null;
-    const enrolledSnapshot = hasScheme
-      ? (c.enrolledSchemes?.find((es) => es.schemeId === c.schemeId)
-        || c.enrolledSchemes?.[c.enrolledSchemes.length - 1])
-      : null;
-    const schemeName = hasScheme ? (enrolledSnapshot?.schemeName || scheme?.name || 'Chit Scheme') : 'No Scheme Availed';
-    const isSettled = hasScheme && stats.remainingAmount === 0;
+    const totalVal = c.totalAmount || c.amountGiven || 0;
+    const isSettled = totalVal > 0 && stats.remainingAmount === 0;
     const statusInfo = getPaymentStatusInfo(c.nextPaymentDate, stats.remainingAmount, c.frequency);
     return {
       customer: c,
       stats,
-      scheme,
-      schemeName,
+      totalVal,
       isSettled,
       statusInfo,
-      hasScheme,
     };
   });
 
+  const overdueCount = customerData.filter((item) => item.statusInfo.isOverdue).length;
+  const dueTodayCount = customerData.filter((item) => item.statusInfo.status === 'DUE_TODAY').length;
   const activeCount = customerData.filter((item) => !item.isSettled).length;
   const settledCount = customerData.filter((item) => item.isSettled).length;
 
-  const filteredItems = customerData.filter(({ customer, scheme, isSettled }) => {
-    const query = searchQuery.toLowerCase();
+  const filteredItems = customerData.filter(({ customer, isSettled, statusInfo }) => {
+    const query = searchQuery.toLowerCase().trim();
     const matchesSearch =
       customer.name.toLowerCase().includes(query) ||
       customer.phone.includes(query) ||
-      (scheme && scheme.name.toLowerCase().includes(query));
+      customer.id.toLowerCase().includes(query);
 
     if (!matchesSearch) return false;
 
+    if (filterType === 'OVERDUE') return statusInfo.isOverdue;
+    if (filterType === 'DUE_TODAY') return statusInfo.status === 'DUE_TODAY';
     if (filterType === 'ACTIVE') return !isSettled;
     if (filterType === 'SETTLED') return isSettled;
     return true;
@@ -112,7 +105,7 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
 
       Alert.alert(
         'Collection Recorded! ✓',
-        `Payment of ₹${amount.toLocaleString('en-IN')} has been recorded for ${customerName}.\n\nThe official invoice is available for the customer to view and print from the Receipts tab in their Customer Dashboard.`
+        `Payment of ₹${amount.toLocaleString('en-IN')} has been recorded for ${customerName}.\n\nReceipt #${result.receipt.receiptNumber} generated.`
       );
     } else {
       setCollectError(result.error || 'Failed to record collection');
@@ -120,12 +113,13 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   };
 
   const renderCustomerItem = ({ item }: { item: typeof customerData[0] }) => {
-    const { customer, stats, scheme, schemeName, isSettled, statusInfo, hasScheme } = item;
+    const { customer, stats, totalVal, isSettled, statusInfo } = item;
+    const payout = customer.payoutAmount ?? Math.max(0, totalVal - (customer.interestAmount || 0));
 
     return (
       <View style={styles.cardWrapper}>
         <Card style={styles.customerCard}>
-          {/* Top Row: Customer Info + Member Badge & Action Buttons */}
+          {/* Top Row: Customer Info + ID Badge & Action Buttons */}
           <View style={styles.cardHeader}>
             <TouchableOpacity
               style={styles.customerNameSection}
@@ -134,12 +128,13 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
             >
               <View style={styles.nameRow}>
                 <Text style={styles.nameText}>{customer.name}</Text>
+                <View style={styles.custIdBadge}>
+                  <Text style={styles.custIdBadgeText}>{customer.id}</Text>
+                </View>
                 <View
                   style={[
                     styles.memberBadge,
-                    !hasScheme
-                      ? styles.pendingBadge
-                      : isSettled
+                    isSettled
                       ? styles.settledBadge
                       : statusInfo.isOverdue
                       ? styles.overdueBadge
@@ -151,9 +146,7 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                   <Text
                     style={[
                       styles.memberBadgeText,
-                      !hasScheme
-                        ? styles.pendingBadgeText
-                        : isSettled
+                      isSettled
                         ? styles.settledBadgeText
                         : statusInfo.isOverdue
                         ? styles.overdueBadgeText
@@ -162,38 +155,32 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                         : styles.activeBadgeText,
                     ]}
                   >
-                    {!hasScheme
-                      ? '📝 Pending Scheme'
-                      : isSettled
+                    {isSettled
                       ? '✓ Fully Settled'
                       : statusInfo.isOverdue
                       ? `⚠️ ${statusInfo.statusText}`
                       : statusInfo.status === 'DUE_TODAY'
                       ? 'Due Today'
-                      : 'Active Member'}
+                      : 'Active'}
                   </Text>
                 </View>
               </View>
-              <Text style={styles.phoneText}>+91 {customer.phone}</Text>
-              <Text style={styles.schemeTagText}>
-                {hasScheme ? `${schemeName} · ${formatFrequency(customer.frequency)}` : 'No Scheme Availed Yet'}
+              <Text style={styles.phoneText}>📞 +91 {customer.phone}</Text>
+              <Text style={styles.scheduleText}>
+                ₹{customer.collectionAmount.toLocaleString('en-IN')} / {formatFrequency(customer.frequency)} · Next Due: {formatDateShort(customer.nextPaymentDate)}
               </Text>
             </TouchableOpacity>
 
-            {/* Action Buttons: Collected Button beside View Profile */}
+            {/* Quick Actions */}
             <View style={styles.headerButtonsContainer}>
-              {!hasScheme ? (
-                <View style={styles.noSchemeTag}>
-                  <Text style={styles.noSchemeTagText}>No Scheme</Text>
-                </View>
-              ) : !isSettled ? (
+              {!isSettled ? (
                 <TouchableOpacity
                   style={[styles.collectedBtn, statusInfo.isOverdue && styles.collectedBtnOverdue]}
                   onPress={() => handleOpenCollect(customer)}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.collectedBtnText}>
-                    {statusInfo.isOverdue ? 'Collect ⚠️' : '✓ Collected'}
+                    {statusInfo.isOverdue ? 'Collect ⚠️' : '✓ Collect'}
                   </Text>
                 </TouchableOpacity>
               ) : (
@@ -207,26 +194,29 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                 onPress={() => navigation.navigate('CustomerDetail', { customerId: customer.id })}
                 activeOpacity={0.7}
               >
-                <Text style={styles.viewProfileText}>View Profile →</Text>
+                <Text style={styles.viewProfileText}>View →</Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Navigates to details on tapping the financial summary / progress area */}
+          {/* Financial Parameters Row */}
           <TouchableOpacity
             onPress={() => navigation.navigate('CustomerDetail', { customerId: customer.id })}
             activeOpacity={0.8}
           >
             <View style={styles.divider} />
 
-            {/* Financial Overview Row */}
             <View style={styles.financialRow}>
               <View style={styles.finCol}>
-                <Text style={styles.finLabel}>SCHEME VALUE</Text>
-                <Text style={styles.finValue}>₹{customer.amountGiven.toLocaleString('en-IN')}</Text>
+                <Text style={styles.finLabel}>DISBURSED</Text>
+                <Text style={styles.finValue}>₹{payout.toLocaleString('en-IN')}</Text>
               </View>
               <View style={styles.finCol}>
-                <Text style={styles.finLabel}>TOTAL PAID</Text>
+                <Text style={styles.finLabel}>TOTAL REPAY</Text>
+                <Text style={styles.finValue}>₹{totalVal.toLocaleString('en-IN')}</Text>
+              </View>
+              <View style={styles.finCol}>
+                <Text style={styles.finLabel}>PAID</Text>
                 <Text style={[styles.finValue, styles.paidText]}>
                   ₹{stats.paidAmount.toLocaleString('en-IN')}
                 </Text>
@@ -244,17 +234,7 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
               <View style={styles.progressTrack}>
                 <View style={[styles.progressBar, { width: `${stats.progressPercentage}%` }]} />
               </View>
-              <Text style={styles.progressPercentageText}>{Math.round(stats.progressPercentage)}% Paid</Text>
-            </View>
-
-            {/* Member Metadata Footer */}
-            <View style={styles.memberFooter}>
-              <Text style={styles.memberFooterText}>
-                Joined: {formatDateShort(customer.startDate)}
-              </Text>
-              <Text style={styles.memberFooterText}>
-                {stats.totalPayments} {stats.totalPayments === 1 ? 'payment' : 'payments'} recorded
-              </Text>
+              <Text style={styles.progressPercentageText}>{Math.round(stats.progressPercentage)}%</Text>
             </View>
           </TouchableOpacity>
         </Card>
@@ -265,47 +245,73 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar style="light" />
+
+      {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Customers</Text>
-          <Text style={styles.headerSubtitle}>Directory of registered members</Text>
+          <Text style={styles.headerTitle}>Customers & Ledgers</Text>
+          <Text style={styles.headerSubtitle}>
+            {activeCount} active borrowers · {customerData.length} total
+          </Text>
         </View>
-        <View style={styles.headerRightRow}>
-          <TouchableOpacity
-            style={styles.profileBtn}
-            onPress={() => navigation.navigate('AdminProfile')}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.profileBtnText}>👤 Profile</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.roleBtn} onPress={() => logout()} activeOpacity={0.8}>
-            <Text style={styles.roleBtnText}>Log Out</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={styles.addCustomerBtn}
+          onPress={() => navigation.navigate('AddCustomer')}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.addCustomerBtnText}>+ Add Customer</Text>
+        </TouchableOpacity>
       </View>
 
-      <View style={styles.content}>
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search by name, phone or scheme..."
-            placeholderTextColor={COLORS.textLight}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            keyboardType="default"
-            autoCapitalize="none"
-          />
-        </View>
+      {/* Search Input */}
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search by ID (e.g. CUST-101), Name, or Phone..."
+          placeholderTextColor={COLORS.textLight}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          clearButtonMode="while-editing"
+        />
+      </View>
 
-        {/* Filter Chips */}
-        <View style={styles.filterRow}>
+      {/* Filter Tabs */}
+      <View style={styles.filterScrollContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
           <TouchableOpacity
             style={[styles.filterChip, filterType === 'ALL' && styles.filterChipActive]}
             onPress={() => setFilterType('ALL')}
           >
             <Text style={[styles.filterChipText, filterType === 'ALL' && styles.filterChipTextActive]}>
-              All ({customers.length})
+              All ({customerData.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.filterChip,
+              filterType === 'OVERDUE' && styles.filterChipActiveOverdue,
+              overdueCount > 0 && styles.filterChipHasOverdue,
+            ]}
+            onPress={() => setFilterType('OVERDUE')}
+          >
+            <Text
+              style={[
+                styles.filterChipText,
+                filterType === 'OVERDUE' && styles.filterChipTextActive,
+                overdueCount > 0 && { color: filterType === 'OVERDUE' ? COLORS.white : '#DC2626' },
+              ]}
+            >
+              ⚠️ Overdue ({overdueCount})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.filterChip, filterType === 'DUE_TODAY' && styles.filterChipActive]}
+            onPress={() => setFilterType('DUE_TODAY')}
+          >
+            <Text style={[styles.filterChipText, filterType === 'DUE_TODAY' && styles.filterChipTextActive]}>
+              Due Today ({dueTodayCount})
             </Text>
           </TouchableOpacity>
 
@@ -326,193 +332,85 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
               Settled ({settledCount})
             </Text>
           </TouchableOpacity>
-        </View>
-
-        {/* Customer Directory List */}
-        {filteredItems.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No members found.</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={filteredItems}
-            renderItem={renderCustomerItem}
-            keyExtractor={(item) => item.customer.id}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
+        </ScrollView>
       </View>
 
-      {/* Floating Add Customer Button */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => navigation.navigate('AddCustomer')}
-        activeOpacity={0.85}
-      >
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
+      {/* Customer List */}
+      <FlatList
+        data={filteredItems}
+        keyExtractor={(item) => item.customer.id}
+        renderItem={renderCustomerItem}
+        contentContainerStyle={styles.listContent}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyIcon}>🔍</Text>
+            <Text style={styles.emptyTitle}>No Customers Found</Text>
+            <Text style={styles.emptySubtitle}>
+              {searchQuery ? 'Try searching with a different name, ID, or phone number' : 'Click "+ Add Customer" above to add your first customer'}
+            </Text>
+          </View>
+        }
+      />
 
-      {/* Record Collection Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={isCollectModalVisible}
-        onRequestClose={() => setIsCollectModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleRow}>
-                <View style={styles.modalIconBadge}>
-                  <Text style={{ fontSize: 16 }}>💰</Text>
-                </View>
+      {/* Quick Collection Modal */}
+      {selectedCust && (
+        <Modal
+          visible={isCollectModalVisible}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setIsCollectModalVisible(false)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.modalBackdrop}
+          >
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
                 <View>
                   <Text style={styles.modalTitle}>Record Collection</Text>
-                  <Text style={styles.modalSubtitle}>Update customer collected amount</Text>
+                  <Text style={styles.modalSubtitle}>
+                    {selectedCust.name} ({selectedCust.id})
+                  </Text>
                 </View>
+                <TouchableOpacity onPress={() => setIsCollectModalVisible(false)}>
+                  <Text style={styles.modalCloseText}>✕</Text>
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity onPress={() => setIsCollectModalVisible(false)} style={styles.closeBtn}>
-                <Text style={styles.closeBtnText}>✕</Text>
-              </TouchableOpacity>
-            </View>
 
-            {selectedCust && (() => {
-              const custStats = getCustomerStats(selectedCust.id);
-              const custScheme = schemes.find((s) => s.id === selectedCust.schemeId);
-              const custSnapshot = selectedCust.enrolledSchemes?.find((es) => es.schemeId === selectedCust.schemeId)
-                || selectedCust.enrolledSchemes?.[selectedCust.enrolledSchemes.length - 1];
-              const custSchemeName = custSnapshot?.schemeName || custScheme?.name || 'Chit Scheme';
-              const statusInfo = getPaymentStatusInfo(
-                selectedCust.nextPaymentDate,
-                custStats.remainingAmount,
-                selectedCust.frequency
-              );
+              {collectError ? <Text style={styles.errorTextBanner}>{collectError}</Text> : null}
 
-              return (
-                <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-                  {/* Customer summary card */}
-                  <View style={styles.modalCustCard}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.modalCustName}>{selectedCust.name}</Text>
-                      <Text style={styles.modalCustPhone}>+91 {selectedCust.phone}</Text>
-                      <Text style={styles.modalCustScheme}>
-                        {custSchemeName} · {formatFrequency(selectedCust.frequency)}
-                      </Text>
-                    </View>
-                    <View style={styles.modalBalanceBox}>
-                      <Text style={styles.modalBalanceLabel}>REMAINING</Text>
-                      <Text style={styles.modalBalanceVal}>
-                        ₹{custStats.remainingAmount.toLocaleString('en-IN')}
-                      </Text>
-                    </View>
-                  </View>
+              <FormInput
+                label="Collection Amount (₹)"
+                placeholder="e.g. 1000"
+                value={collectAmount}
+                onChangeText={setCollectAmount}
+                keyboardType="numeric"
+              />
 
-                  {/* Overdue clearing notice banner */}
-                  {statusInfo.isOverdue && (
-                    <View style={styles.modalOverdueBanner}>
-                      <Text style={styles.modalOverdueIcon}>⚠️</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.modalOverdueTitle}>Overdue Installment ({statusInfo.statusText})</Text>
-                        <Text style={styles.modalOverdueDesc}>
-                          Scheduled installment: ₹{selectedCust.collectionAmount.toLocaleString('en-IN')}. Recording this collection will clear the overdue status and schedule the next installment cycle.
-                        </Text>
-                      </View>
-                    </View>
-                  )}
-
-                  {collectError ? <Text style={styles.modalError}>{collectError}</Text> : null}
-
-                  {/* Amount Input */}
-                  <FormInput
-                    label="Collection Amount (₹)"
-                    placeholder="Enter amount collected"
-                    value={collectAmount}
-                    onChangeText={(val) => {
-                      setCollectAmount(val);
-                      setCollectError('');
-                    }}
-                    keyboardType="numeric"
-                  />
-
-                  {/* Quick Amount Suggestion Chips */}
-                  <View style={styles.quickChipsRow}>
-                    <TouchableOpacity
-                      style={styles.quickChip}
-                      onPress={() => setCollectAmount(selectedCust.collectionAmount.toString())}
-                    >
-                      <Text style={styles.quickChipText}>
-                        ₹{selectedCust.collectionAmount.toLocaleString('en-IN')} (1x Due)
-                      </Text>
-                    </TouchableOpacity>
-
-                    {custStats.remainingAmount >= selectedCust.collectionAmount * 2 && (
-                      <TouchableOpacity
-                        style={styles.quickChip}
-                        onPress={() => setCollectAmount((selectedCust.collectionAmount * 2).toString())}
-                      >
-                        <Text style={styles.quickChipText}>
-                          ₹{(selectedCust.collectionAmount * 2).toLocaleString('en-IN')} (2x Due)
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-
-                    <TouchableOpacity
-                      style={styles.quickChip}
-                      onPress={() => setCollectAmount(custStats.remainingAmount.toString())}
-                    >
-                      <Text style={styles.quickChipText}>Full Settle</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Payment Method Selector */}
-                  <Text style={styles.modalSectionLabel}>Payment Method</Text>
-                  <View style={styles.methodGrid}>
-                    {(['Cash', 'UPI', 'Bank Transfer', 'Card'] as const).map((method) => {
-                      const isSelected = paymentMethod === method;
-                      return (
-                        <TouchableOpacity
-                          key={method}
-                          style={[
-                            styles.methodBtn,
-                            isSelected ? styles.methodBtnSelected : null,
-                          ]}
-                          onPress={() => setPaymentMethod(method)}
-                          activeOpacity={0.7}
-                        >
-                          <Text
-                            style={[
-                              styles.methodBtnText,
-                              isSelected ? styles.methodBtnTextSelected : null,
-                            ]}
-                          >
-                            {method}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-
-                  {/* Clarification info */}
-                  <View style={styles.modalInfoNotice}>
-                    <Text style={styles.modalInfoText}>
-                      ✓ Automatically generates verified receipt & clears overdue in Collections tab.
+              <Text style={styles.fieldLabel}>Payment Mode</Text>
+              <View style={styles.methodContainer}>
+                {(['Cash', 'UPI', 'Bank Transfer', 'Card'] as const).map((method) => (
+                  <TouchableOpacity
+                    key={method}
+                    style={[styles.methodBtn, paymentMethod === method && styles.methodBtnSelected]}
+                    onPress={() => setPaymentMethod(method)}
+                  >
+                    <Text style={[styles.methodBtnText, paymentMethod === method && styles.methodBtnTextSelected]}>
+                      {method}
                     </Text>
-                  </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-                  <Button
-                    title="Confirm Collection & Clear Overdue"
-                    onPress={handleConfirmCollection}
-                    style={styles.modalSubmitBtn}
-                    size="large"
-                    variant="success"
-                  />
-                </ScrollView>
-              );
-            })()}
-          </View>
-        </View>
-      </Modal>
+              <Button
+                title="Confirm & Generate Receipt"
+                onPress={handleConfirmCollection}
+                style={{ marginTop: SPACING.md }}
+              />
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 };
@@ -528,7 +426,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.md,
-    paddingBottom: SPACING.md,
+    paddingBottom: SPACING.sm,
   },
   headerTitle: {
     ...TYPOGRAPHY.h2,
@@ -538,92 +436,79 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.textLight,
   },
-  headerRightRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs + 2,
-  },
-  profileBtn: {
+  addCustomerBtn: {
     backgroundColor: COLORS.secondary,
-    paddingHorizontal: SPACING.md - 2,
+    paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderRadius: 8,
+    ...SHADOWS.sm,
   },
-  profileBtnText: {
+  addCustomerBtnText: {
     ...TYPOGRAPHY.captionBold,
     color: COLORS.white,
     fontSize: 12,
   },
-  roleBtn: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 8,
-  },
-  roleBtnText: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.white,
-  },
-  content: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
   searchContainer: {
     paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.md,
-    paddingBottom: SPACING.xs,
-    backgroundColor: COLORS.white,
+    marginBottom: SPACING.xs,
   },
   searchInput: {
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderRadius: 10,
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm + 2,
-    ...TYPOGRAPHY.bodyMedium,
-    color: COLORS.text,
+    paddingVertical: SPACING.sm,
+    color: COLORS.white,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  filterScrollContainer: {
+    paddingVertical: SPACING.xs + 2,
   },
   filterRow: {
-    flexDirection: 'row',
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm + 2,
-    backgroundColor: COLORS.white,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
     gap: SPACING.xs,
   },
   filterChip: {
     paddingHorizontal: SPACING.md,
     paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#F1F5F9',
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: 'transparent',
   },
   filterChipActive: {
-    backgroundColor: COLORS.secondary,
-    borderColor: COLORS.secondary,
+    backgroundColor: COLORS.white,
+  },
+  filterChipActiveOverdue: {
+    backgroundColor: '#DC2626',
+    borderColor: '#DC2626',
+  },
+  filterChipHasOverdue: {
+    borderColor: '#F87171',
   },
   filterChipText: {
     ...TYPOGRAPHY.captionBold,
+    color: COLORS.textLight,
     fontSize: 11,
-    color: COLORS.textMuted,
   },
   filterChipTextActive: {
-    color: COLORS.white,
+    color: COLORS.primary,
   },
   listContent: {
-    padding: SPACING.md,
-    paddingBottom: 110,
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.xl * 2,
+    backgroundColor: COLORS.background,
+    flexGrow: 1,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: SPACING.md,
   },
   cardWrapper: {
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm + 4,
   },
   customerCard: {
     padding: SPACING.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -632,115 +517,97 @@ const styles = StyleSheet.create({
   },
   customerNameSection: {
     flex: 1,
-    marginRight: SPACING.sm,
+    marginRight: SPACING.xs,
   },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
     flexWrap: 'wrap',
-    gap: SPACING.xs + 2,
-    marginBottom: 2,
+    marginBottom: 3,
   },
   nameText: {
-    ...TYPOGRAPHY.bodyLarge,
-    fontWeight: '700',
-    color: COLORS.text,
+    ...TYPOGRAPHY.h3,
+    fontSize: 16,
+    color: COLORS.primary,
   },
-  phoneText: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textMuted,
+  custIdBadge: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
   },
-  schemeTagText: {
+  custIdBadgeText: {
     ...TYPOGRAPHY.captionBold,
-    color: COLORS.secondary,
-    fontSize: 11,
-    marginTop: 2,
+    fontSize: 10,
+    color: '#2563EB',
+    fontFamily: 'monospace',
   },
   memberBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
   },
   memberBadgeText: {
     ...TYPOGRAPHY.captionBold,
     fontSize: 10,
   },
   activeBadge: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
+    backgroundColor: '#F0FDF4',
   },
   activeBadgeText: {
     ...TYPOGRAPHY.captionBold,
-    color: '#2563EB',
     fontSize: 10,
-  },
-  overdueBadge: {
-    backgroundColor: '#FEE2E2',
-    borderWidth: 1,
-    borderColor: '#FCA5A5',
-  },
-  overdueBadgeText: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#DC2626',
-    fontSize: 10,
+    color: '#16A34A',
   },
   dueTodayBadge: {
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#FCD34D',
+    backgroundColor: '#FFFBEB',
   },
   dueTodayBadgeText: {
     ...TYPOGRAPHY.captionBold,
-    color: '#D97706',
     fontSize: 10,
+    color: '#D97706',
+  },
+  overdueBadge: {
+    backgroundColor: '#FEF2F2',
+  },
+  overdueBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 10,
+    color: '#DC2626',
   },
   settledBadge: {
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
+    backgroundColor: '#F1F5F9',
   },
   settledBadgeText: {
     ...TYPOGRAPHY.captionBold,
-    color: '#059669',
     fontSize: 10,
+    color: COLORS.textMuted,
   },
-  pendingBadge: {
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#FDE68A',
+  phoneText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginBottom: 2,
   },
-  pendingBadgeText: {
+  scheduleText: {
     ...TYPOGRAPHY.captionBold,
-    color: '#B45309',
-    fontSize: 10,
-  },
-  noSchemeTag: {
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  noSchemeTagText: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#64748B',
-    fontSize: 10,
+    color: COLORS.secondary,
+    fontSize: 11,
   },
   headerButtonsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     gap: 6,
   },
   collectedBtn: {
-    backgroundColor: '#10B981',
+    backgroundColor: COLORS.secondary,
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
   },
   collectedBtnOverdue: {
-    backgroundColor: '#EF4444',
+    backgroundColor: '#DC2626',
   },
   collectedBtnText: {
     ...TYPOGRAPHY.captionBold,
@@ -748,30 +615,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   settledTag: {
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 6,
   },
   settledTagText: {
     ...TYPOGRAPHY.captionBold,
-    color: '#059669',
-    fontSize: 10,
+    color: COLORS.textMuted,
+    fontSize: 11,
   },
   viewProfileBtn: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
   },
   viewProfileText: {
     ...TYPOGRAPHY.captionBold,
     color: COLORS.textMuted,
-    fontSize: 10,
+    fontSize: 11,
   },
   divider: {
     height: 1,
@@ -781,273 +642,127 @@ const styles = StyleSheet.create({
   financialRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: SPACING.xs + 2,
   },
   finCol: {
-    flex: 1,
+    alignItems: 'flex-start',
   },
   finLabel: {
     ...TYPOGRAPHY.captionBold,
-    color: COLORS.textLight,
     fontSize: 9,
+    color: COLORS.textLight,
   },
   finValue: {
     ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.text,
-    marginTop: 2,
+    color: COLORS.primary,
+    fontSize: 12,
   },
   paidText: {
     color: COLORS.success,
   },
   remText: {
-    color: COLORS.text,
+    color: COLORS.danger,
   },
   progressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
-    marginTop: SPACING.sm,
+    gap: SPACING.xs,
   },
   progressTrack: {
     flex: 1,
-    height: 6,
+    height: 5,
     backgroundColor: '#E2E8F0',
     borderRadius: 3,
     overflow: 'hidden',
   },
   progressBar: {
     height: '100%',
-    backgroundColor: COLORS.secondary,
-    borderRadius: 3,
+    backgroundColor: COLORS.success,
   },
   progressPercentageText: {
     ...TYPOGRAPHY.captionBold,
-    color: COLORS.textMuted,
     fontSize: 10,
-    width: 55,
+    color: COLORS.textMuted,
+    minWidth: 26,
     textAlign: 'right',
   },
-  memberFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: SPACING.sm,
-    paddingTop: SPACING.xs + 2,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  memberFooterText: {
-    ...TYPOGRAPHY.caption,
-    fontSize: 11,
-    color: COLORS.textMuted,
-  },
   emptyContainer: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: SPACING.xl,
+    paddingVertical: SPACING.xl * 2,
   },
-  emptyText: {
+  emptyIcon: {
+    fontSize: 40,
+    marginBottom: SPACING.sm,
+  },
+  emptyTitle: {
+    ...TYPOGRAPHY.h3,
+    color: COLORS.primary,
+    marginBottom: 4,
+  },
+  emptySubtitle: {
     ...TYPOGRAPHY.bodyMedium,
     color: COLORS.textMuted,
+    textAlign: 'center',
+    maxWidth: 300,
   },
-  fab: {
-    position: 'absolute',
-    bottom: 28,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.secondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...SHADOWS.lg,
-  },
-  fabText: {
-    color: COLORS.white,
-    fontSize: 32,
-    fontWeight: '300',
-    lineHeight: 32,
-    marginTop: -2,
-  },
-  // Modal Styles
-  modalOverlay: {
+  modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.lg,
   },
   modalContent: {
-    backgroundColor: COLORS.background,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '90%',
-    paddingBottom: 24,
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    padding: SPACING.lg,
+    width: '100%',
+    maxWidth: 400,
+    ...SHADOWS.lg,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md + 2,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    backgroundColor: COLORS.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-  },
-  modalTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  modalIconBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#ECFDF5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: SPACING.sm,
+    alignItems: 'flex-start',
+    marginBottom: SPACING.md,
   },
   modalTitle: {
     ...TYPOGRAPHY.h3,
     color: COLORS.primary,
   },
   modalSubtitle: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textMuted,
-    fontSize: 11,
-  },
-  closeBtn: {
-    padding: SPACING.xs,
-  },
-  closeBtnText: {
-    fontSize: 20,
-    color: COLORS.textMuted,
-    fontWeight: 'bold',
-  },
-  modalScroll: {
-    padding: SPACING.lg,
-  },
-  modalCustCard: {
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    padding: SPACING.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-  },
-  modalCustName: {
-    ...TYPOGRAPHY.bodyLarge,
-    fontWeight: '700',
-    color: COLORS.primary,
-  },
-  modalCustPhone: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-  modalCustScheme: {
     ...TYPOGRAPHY.captionBold,
     color: COLORS.secondary,
-    fontSize: 11,
     marginTop: 2,
   },
-  modalBalanceBox: {
-    alignItems: 'flex-end',
+  modalCloseText: {
+    fontSize: 18,
+    color: COLORS.textMuted,
+    padding: 4,
   },
-  modalBalanceLabel: {
+  fieldLabel: {
     ...TYPOGRAPHY.captionBold,
-    color: COLORS.textLight,
-    fontSize: 9,
+    color: COLORS.textMuted,
+    marginBottom: SPACING.xs,
   },
-  modalBalanceVal: {
-    ...TYPOGRAPHY.bodyMediumBold,
-    color: COLORS.danger,
-    marginTop: 2,
-  },
-  modalOverdueBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    borderLeftWidth: 4,
-    borderLeftColor: '#EF4444',
-    borderRadius: 10,
-    padding: SPACING.sm + 2,
-    marginBottom: SPACING.md,
-    gap: SPACING.sm,
-  },
-  modalOverdueIcon: {
-    fontSize: 20,
-  },
-  modalOverdueTitle: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#991B1B',
-    fontSize: 11,
-  },
-  modalOverdueDesc: {
-    ...TYPOGRAPHY.caption,
-    color: '#7F1D1D',
-    fontSize: 10,
-    marginTop: 1,
-  },
-  modalError: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.danger,
-    marginBottom: SPACING.sm,
-  },
-  quickChipsRow: {
+  methodContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: SPACING.xs + 2,
-    marginBottom: SPACING.md,
-    marginTop: -SPACING.xs,
-  },
-  quickChip: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    borderRadius: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  quickChipText: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.secondary,
-    fontSize: 11,
-  },
-  modalSectionLabel: {
-    ...TYPOGRAPHY.captionBold,
-    color: COLORS.primaryLight,
+    gap: SPACING.xs,
     marginBottom: SPACING.sm,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    fontSize: 10,
-  },
-  methodGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -SPACING.xs,
-    marginBottom: SPACING.md,
   },
   methodBtn: {
-    backgroundColor: COLORS.white,
-    borderWidth: 1.5,
+    paddingVertical: SPACING.xs + 2,
+    paddingHorizontal: SPACING.sm + 2,
+    borderRadius: 8,
+    borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 10,
-    paddingVertical: SPACING.sm + 2,
-    margin: SPACING.xs,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '46%',
-    flexGrow: 1,
+    backgroundColor: COLORS.white,
   },
   methodBtnSelected: {
-    backgroundColor: COLORS.success,
-    borderColor: COLORS.success,
+    backgroundColor: COLORS.secondary,
+    borderColor: COLORS.secondary,
   },
   methodBtnText: {
     ...TYPOGRAPHY.captionBold,
@@ -1056,20 +771,13 @@ const styles = StyleSheet.create({
   methodBtnTextSelected: {
     color: COLORS.white,
   },
-  modalInfoNotice: {
-    backgroundColor: '#ECFDF5',
-    borderRadius: 8,
+  errorTextBanner: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.danger,
+    backgroundColor: '#FEF2F2',
     padding: SPACING.sm,
-    marginBottom: SPACING.lg,
-  },
-  modalInfoText: {
-    ...TYPOGRAPHY.captionBold,
-    color: '#065F46',
-    fontSize: 11,
-    textAlign: 'center',
-  },
-  modalSubmitBtn: {
-    marginBottom: SPACING.xl,
+    borderRadius: 8,
+    marginBottom: SPACING.sm,
   },
 });
 
