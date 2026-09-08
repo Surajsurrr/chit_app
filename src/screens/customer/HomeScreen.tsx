@@ -52,6 +52,8 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const isOverdue = statusInfo.isOverdue && stats.remainingAmount > 0;
   const isDueToday = statusInfo.status === 'DUE_TODAY' && stats.remainingAmount > 0;
   const isSettled = stats.remainingAmount === 0 && totalValue > 0;
+  const enrolledSchemes = Array.isArray(customer.enrolledSchemes) ? customer.enrolledSchemes : [];
+  const hasMultipleSchemes = enrolledSchemes.length > 1;
 
   const nameInitials = customer.name
     .split(' ')
@@ -200,8 +202,67 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           </Card>
         )}
 
+        {/* MULTI-SCHEME BREAKDOWN CARDS (IF MULTIPLE SCHEMES) */}
+        {hasMultipleSchemes && (
+          <View style={styles.schemesSection}>
+            <View style={styles.schemesHeaderRow}>
+              <Text style={styles.sectionTitle}>
+                Active Schemes ({enrolledSchemes.length})
+              </Text>
+              <View style={styles.schemesCountBadge}>
+                <Text style={styles.schemesCountBadgeText}>MULTIPLE LOANS</Text>
+              </View>
+            </View>
+
+            {enrolledSchemes.map((schemeItem: any, idx: number) => {
+              const p = Number(schemeItem.payoutAmount || 0);
+              const i = Number(schemeItem.interestAmount || 0);
+              const t = Number(schemeItem.totalAmount || (p + i) || 0);
+              const c = Number(schemeItem.collectionAmount || 0);
+              const dur = Number(schemeItem.durationInstallments || 50);
+              const f = schemeItem.frequency || customer.frequency || 'daily';
+              const name = schemeItem.loanName || `Scheme #${idx + 1}`;
+              const sDate = schemeItem.startDate ? formatDateShort(schemeItem.startDate) : 'Active';
+
+              return (
+                <Card key={schemeItem.id || idx} style={styles.schemeItemCard}>
+                  <View style={styles.schemeItemHeader}>
+                    <View style={styles.schemeBadge}>
+                      <Text style={styles.schemeBadgeText}>{name}</Text>
+                    </View>
+                    <Text style={styles.schemeDateText}>Disbursed: {sDate}</Text>
+                  </View>
+
+                  <View style={styles.schemeGrid}>
+                    <View style={styles.schemeGridCol}>
+                      <Text style={styles.schemeGridLabel}>DISBURSED PAYOUT</Text>
+                      <Text style={styles.schemeGridPayoutVal}>₹{p.toLocaleString('en-IN')}</Text>
+                    </View>
+                    <View style={styles.schemeGridCol}>
+                      <Text style={styles.schemeGridLabel}>INTEREST</Text>
+                      <Text style={styles.schemeGridInterestVal}>₹{i.toLocaleString('en-IN')}</Text>
+                    </View>
+                    <View style={styles.schemeGridCol}>
+                      <Text style={styles.schemeGridLabel}>TOTAL REPAYABLE</Text>
+                      <Text style={styles.schemeGridRepayVal}>₹{t.toLocaleString('en-IN')}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.schemeFooter}>
+                    <Text style={styles.schemeFooterText}>
+                      Installment: <Text style={{ fontWeight: '700', color: COLORS.secondary }}>₹{c.toLocaleString('en-IN')}</Text> / {formatFrequency(f)} ({dur} cycles)
+                    </Text>
+                  </View>
+                </Card>
+              );
+            })}
+          </View>
+        )}
+
         {/* LENDING & REPAYMENT TERMS CARD */}
-        <Text style={styles.sectionTitle}>Lending & Repayment Terms</Text>
+        <Text style={styles.sectionTitle}>
+          {hasMultipleSchemes ? 'Combined Lending Terms & Collection' : 'Lending & Repayment Terms'}
+        </Text>
         <Card style={styles.termsCard}>
           <View style={styles.termsIdRow}>
             <Text style={styles.termsIdLabel}>Customer ID (Login ID)</Text>
@@ -701,6 +762,101 @@ const styles = StyleSheet.create({
   emptyHistoryText: {
     ...TYPOGRAPHY.bodyMedium,
     color: COLORS.textMuted,
+  },
+  // Multi-Scheme Styles
+  schemesSection: {
+    marginBottom: SPACING.md,
+  },
+  schemesHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+  },
+  schemesCountBadge: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  schemesCountBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#2563EB',
+    fontSize: 9,
+    letterSpacing: 0.5,
+  },
+  schemeItemCard: {
+    marginBottom: SPACING.sm,
+    padding: SPACING.sm + 2,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3B82F6',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E2E8F0',
+    borderWidth: 1,
+  },
+  schemeItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+  },
+  schemeBadge: {
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  schemeBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#1E40AF',
+    fontSize: 10,
+  },
+  schemeDateText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    fontSize: 10,
+  },
+  schemeGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 6,
+    padding: SPACING.xs + 2,
+    marginBottom: 4,
+  },
+  schemeGridCol: {
+    alignItems: 'center',
+  },
+  schemeGridLabel: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 8,
+    color: COLORS.textMuted,
+    marginBottom: 2,
+  },
+  schemeGridPayoutVal: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 11,
+    color: '#2563EB',
+  },
+  schemeGridInterestVal: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 11,
+    color: '#D97706',
+  },
+  schemeGridRepayVal: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 11,
+    color: COLORS.primary,
+  },
+  schemeFooter: {
+    marginTop: 2,
+  },
+  schemeFooterText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textLight,
+    fontSize: 11,
   },
   errorContainer: {
     flex: 1,

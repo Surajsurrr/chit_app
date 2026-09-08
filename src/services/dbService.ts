@@ -41,12 +41,33 @@ function mapAdminFromRow(row: any): AdminCredentials {
 }
 
 function mapCustomerFromRow(row: any): Customer {
-  const snapshot = Array.isArray(row.enrolled_schemes) && row.enrolled_schemes.length > 0 ? row.enrolled_schemes[0] : null;
-  const totalAmt = Number(row.total_amount || snapshot?.totalAmount || row.amount_given || 0);
-  const payoutAmt = Number(row.payout_amount || snapshot?.payoutAmount || 0);
-  const interestAmt = Number(row.interest_amount || snapshot?.interestAmount || 0);
-  const dur = Number(row.duration_installments || snapshot?.durationWeeksOrMonths || snapshot?.durationInstallments || 50);
-  const intRate = Number(row.interest_rate || snapshot?.interestRate || (payoutAmt > 0 ? (interestAmt / payoutAmt) * 100 : 0));
+  const schemesList = Array.isArray(row.enrolled_schemes) ? row.enrolled_schemes : [];
+  let totalAmt = Number(row.total_amount || row.amount_given || 0);
+  let payoutAmt = Number(row.payout_amount || 0);
+  let interestAmt = Number(row.interest_amount || 0);
+  let colAmt = Number(row.collection_amount || 0);
+  let dur = Number(row.duration_installments || 50);
+  let freq = row.frequency || 'monthly';
+
+  if (schemesList.length > 1) {
+    // Sum across multiple loans/schemes
+    totalAmt = schemesList.reduce((sum: number, s: any) => sum + (Number(s.totalAmount) || Number(s.amountGiven) || 0), 0);
+    payoutAmt = schemesList.reduce((sum: number, s: any) => sum + (Number(s.payoutAmount) || 0), 0);
+    interestAmt = schemesList.reduce((sum: number, s: any) => sum + (Number(s.interestAmount) || 0), 0);
+    colAmt = schemesList.reduce((sum: number, s: any) => sum + (Number(s.collectionAmount) || 0), 0);
+    freq = schemesList[schemesList.length - 1].frequency || freq;
+  } else if (schemesList.length === 1) {
+    const snapshot = schemesList[0];
+    totalAmt = totalAmt || Number(snapshot.totalAmount || snapshot.amountGiven || 0);
+    payoutAmt = payoutAmt || Number(snapshot.payoutAmount || 0);
+    interestAmt = interestAmt || Number(snapshot.interestAmount || 0);
+    colAmt = colAmt || Number(snapshot.collectionAmount || 0);
+    dur = dur || Number(snapshot.durationInstallments || snapshot.durationWeeksOrMonths || 50);
+    freq = snapshot.frequency || freq;
+  }
+
+  const intRate = payoutAmt > 0 ? (interestAmt / payoutAmt) * 100 : Number(row.interest_rate || 0);
+
   return {
     id: row.id,
     name: row.name,
@@ -58,9 +79,9 @@ function mapCustomerFromRow(row: any): Customer {
     payoutAmount: payoutAmt || Math.max(0, totalAmt - interestAmt),
     interestAmount: interestAmt,
     interestRate: intRate,
-    collectionAmount: Number(row.collection_amount || snapshot?.collectionAmount || 0),
+    collectionAmount: colAmt,
     durationInstallments: dur,
-    frequency: row.frequency || snapshot?.frequency || 'monthly',
+    frequency: freq,
     startDate: row.start_date || new Date().toISOString(),
     nextPaymentDate: row.next_payment_date || new Date().toISOString(),
     email: row.email || '',
@@ -73,7 +94,7 @@ function mapCustomerFromRow(row: any): Customer {
     idProofType: row.id_proof_type || 'Aadhaar',
     idProofNumber: row.id_proof_number || '',
     enrolledSchemeIds: Array.isArray(row.enrolled_scheme_ids) ? row.enrolled_scheme_ids : [],
-    enrolledSchemes: Array.isArray(row.enrolled_schemes) ? row.enrolled_schemes : [],
+    enrolledSchemes: schemesList,
   };
 }
 
@@ -447,8 +468,10 @@ export const dbService = {
         if (updatedData.idProofType !== undefined) rowUpdates.id_proof_type = updatedData.idProofType;
         if (updatedData.idProofNumber !== undefined) rowUpdates.id_proof_number = updatedData.idProofNumber;
         if (updatedData.enrolledSchemeIds !== undefined) rowUpdates.enrolled_scheme_ids = updatedData.enrolledSchemeIds;
-        // If lending terms are updated, also sync enrolled_schemes snapshot
-        if (
+        // If explicit enrolledSchemes array is provided, preserve all multi-loan records!
+        if (updatedData.enrolledSchemes !== undefined) {
+          rowUpdates.enrolled_schemes = updatedData.enrolledSchemes;
+        } else if (
           updatedData.payoutAmount !== undefined ||
           updatedData.interestAmount !== undefined ||
           updatedData.totalAmount !== undefined ||

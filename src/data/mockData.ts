@@ -1,5 +1,21 @@
 import { calculateNextPaymentDate } from '../utils/dateHelpers';
 
+export interface LendingLoan {
+  id: string;
+  loanName?: string;
+  payoutAmount: number;
+  interestAmount: number;
+  interestRate?: number;
+  totalAmount: number;
+  collectionAmount: number;
+  durationInstallments: number;
+  frequency: 'daily' | 'every_3_days' | 'weekly' | 'monthly';
+  startDate: string;
+  nextPaymentDate?: string;
+  status?: 'active' | 'settled';
+  createdAt?: string;
+}
+
 export interface EnrolledScheme {
   schemeId: string;
   schemeName: string;
@@ -29,7 +45,7 @@ export interface Customer {
   startDate: string;
   nextPaymentDate: string;
   enrolledSchemeIds?: string[];
-  enrolledSchemes?: EnrolledScheme[];
+  enrolledSchemes?: (EnrolledScheme | LendingLoan | any)[];
   // Extended Profile & KYC Details
   email?: string;
   address?: string;
@@ -51,6 +67,7 @@ export interface Payment {
   method: 'UPI' | 'Cash' | 'Card' | 'Bank Transfer';
   receiptId: string;
   schemeName: string;
+  loanId?: string;
 }
 
 export interface Scheme {
@@ -77,6 +94,7 @@ export interface Receipt {
   amount: number;
   method: string;
   schemeName: string;
+  loanId?: string;
   remainingBalance: number;
   referenceId: string;
 }

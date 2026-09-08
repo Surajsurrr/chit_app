@@ -24,7 +24,16 @@ import { StatusBar } from 'expo-status-bar';
 
 export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = ({ route, navigation }) => {
   const { customerId } = route.params;
-  const { customers, payments, getCustomerStats, updateCustomerTerms } = useChitData();
+  const {
+    customers,
+    payments,
+    getCustomerStats,
+    getSchemeStats,
+    updateCustomerTerms,
+    addLoanToCustomer,
+    recordPayment,
+    selectCustomer,
+  } = useChitData();
 
   const customer = customers.find((c) => c.id === customerId);
 
@@ -39,6 +48,27 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
   const [editNextDueDate, setEditNextDueDate] = useState('');
   const [editError, setEditError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Add Second Scheme / Loan Modal State
+  const [isAddLoanModalVisible, setIsAddLoanModalVisible] = useState(false);
+  const [newLoanName, setNewLoanName] = useState('');
+  const [newPayout, setNewPayout] = useState('20000');
+  const [newInterest, setNewInterest] = useState('2000');
+  const [newTotal, setNewTotal] = useState('22000');
+  const [newCollection, setNewCollection] = useState('550');
+  const [newFrequency, setNewFrequency] = useState<'daily' | 'every_3_days' | 'weekly' | 'monthly'>('daily');
+  const [newDuration, setNewDuration] = useState('40');
+  const [newStartDate, setNewStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newLoanError, setNewLoanError] = useState('');
+  const [isAddingLoan, setIsAddingLoan] = useState(false);
+
+  // Record Collection Modal State
+  const [isCollectModalVisible, setIsCollectModalVisible] = useState(false);
+  const [selectedSchemeForCollect, setSelectedSchemeForCollect] = useState<any | null>(null);
+  const [collectAmount, setCollectAmount] = useState('');
+  const [collectMethod, setCollectMethod] = useState<'UPI' | 'Cash' | 'Card' | 'Bank Transfer'>('Cash');
+  const [collectError, setCollectError] = useState('');
+  const [isCollecting, setIsCollecting] = useState(false);
 
   if (!customer) {
     return (
@@ -180,6 +210,197 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
     }
   };
 
+  // Auto-calculation for Disbursing New Scheme: TI/C = Total Repayment / Installment
+  const computeNewLoanCycles = (repayment: number, installment: number): string => {
+    if (repayment > 0 && installment > 0) {
+      const cycles = Math.ceil(repayment / installment);
+      return cycles > 0 ? cycles.toString() : '';
+    }
+    return '';
+  };
+
+  const handleNewPayoutChange = (val: string) => {
+    setNewPayout(val);
+    const p = parseFloat(val) || 0;
+    const i = parseFloat(newInterest) || 0;
+    const tot = p + i;
+    setNewTotal(tot > 0 ? tot.toString() : '');
+    const col = parseFloat(newCollection) || 0;
+    if (col > 0 && tot > 0) {
+      setNewDuration(computeNewLoanCycles(tot, col));
+    }
+  };
+
+  const handleNewInterestChange = (val: string) => {
+    setNewInterest(val);
+    const p = parseFloat(newPayout) || 0;
+    const i = parseFloat(val) || 0;
+    const tot = p + i;
+    setNewTotal(tot > 0 ? tot.toString() : '');
+    const col = parseFloat(newCollection) || 0;
+    if (col > 0 && tot > 0) {
+      setNewDuration(computeNewLoanCycles(tot, col));
+    }
+  };
+
+  const handleNewTotalChange = (val: string) => {
+    setNewTotal(val);
+    const tot = parseFloat(val) || 0;
+    const p = parseFloat(newPayout) || 0;
+    if (tot >= p && p > 0) {
+      setNewInterest((tot - p).toString());
+    }
+    const col = parseFloat(newCollection) || 0;
+    if (col > 0 && tot > 0) {
+      setNewDuration(computeNewLoanCycles(tot, col));
+    }
+  };
+
+  const handleNewCollectionChange = (val: string) => {
+    setNewCollection(val);
+    const col = parseFloat(val) || 0;
+    const tot = parseFloat(newTotal) || 0;
+    if (col > 0 && tot > 0) {
+      setNewDuration(computeNewLoanCycles(tot, col));
+    }
+  };
+
+  const handleNewDurationChange = (val: string) => {
+    setNewDuration(val);
+    const dur = parseInt(val, 10) || 0;
+    const tot = parseFloat(newTotal) || 0;
+    if (dur > 0 && tot > 0) {
+      setNewCollection(Math.round(tot / dur).toString());
+    }
+  };
+
+  const handleOpenAddLoanModal = () => {
+    const count = Array.isArray(customer?.enrolledSchemes) && customer.enrolledSchemes.length > 0
+      ? customer.enrolledSchemes.length + 1
+      : 2;
+    setNewLoanName(`Scheme #${count}`);
+    setNewPayout('20000');
+    setNewInterest('2000');
+    setNewTotal('22000');
+    setNewCollection('550');
+    setNewDuration('40');
+    setNewFrequency(customer?.frequency || 'daily');
+    setNewStartDate(new Date().toISOString().split('T')[0]);
+    setNewLoanError('');
+    setIsAddLoanModalVisible(true);
+  };
+
+  const handleSaveNewLoan = async () => {
+    if (!customer) return;
+    const pAmt = parseFloat(newPayout);
+    const iAmt = parseFloat(newInterest) || 0;
+    const totAmt = parseFloat(newTotal) || (pAmt + iAmt);
+    const colAmt = parseFloat(newCollection);
+    const dur = parseInt(newDuration, 10) || 40;
+
+    if (isNaN(pAmt) || pAmt <= 0) {
+      setNewLoanError('Please enter a valid payout amount');
+      return;
+    }
+    if (isNaN(totAmt) || totAmt <= 0) {
+      setNewLoanError('Please enter a valid total repayment amount');
+      return;
+    }
+    if (isNaN(colAmt) || colAmt <= 0) {
+      setNewLoanError('Please enter a valid installment collection amount');
+      return;
+    }
+
+    setIsAddingLoan(true);
+    setNewLoanError('');
+
+    const res = await addLoanToCustomer(customer.id, {
+      loanName: newLoanName.trim() || `Scheme #${(customer.enrolledSchemes?.length || 1) + 1}`,
+      payoutAmount: pAmt,
+      interestAmount: iAmt,
+      interestRate: pAmt > 0 ? (iAmt / pAmt) * 100 : 0,
+      totalAmount: totAmt,
+      collectionAmount: colAmt,
+      durationInstallments: dur,
+      frequency: newFrequency,
+      startDate: newStartDate ? new Date(newStartDate).toISOString() : new Date().toISOString(),
+    });
+
+    setIsAddingLoan(false);
+
+    if (res.success) {
+      setIsAddLoanModalVisible(false);
+      Alert.alert(
+        'Scheme Added ✓',
+        `New lending scheme "${newLoanName.trim() || 'Scheme'}" has been added to ${customer.name}'s profile successfully.`
+      );
+    } else {
+      setNewLoanError(res.error || 'Failed to add scheme to customer');
+    }
+  };
+
+  const handleOpenSchemeCollect = (schemeItem: any) => {
+    setSelectedSchemeForCollect(schemeItem);
+    setCollectAmount(schemeItem.collectionAmount ? schemeItem.collectionAmount.toString() : '');
+    setCollectMethod('Cash');
+    setCollectError('');
+    setIsCollectModalVisible(true);
+  };
+
+  const handleOpenOverallCollect = () => {
+    const enrolled = Array.isArray(customer?.enrolledSchemes) ? customer.enrolledSchemes : [];
+    if (enrolled.length > 0) {
+      setSelectedSchemeForCollect(enrolled[0]);
+      setCollectAmount(enrolled[0].collectionAmount ? enrolled[0].collectionAmount.toString() : (customer?.collectionAmount.toString() || ''));
+    } else {
+      setSelectedSchemeForCollect(null);
+      setCollectAmount(customer?.collectionAmount.toString() || '');
+    }
+    setCollectMethod('Cash');
+    setCollectError('');
+    setIsCollectModalVisible(true);
+  };
+
+  const handleConfirmCollection = () => {
+    if (!customer) return;
+    const amount = parseFloat(collectAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setCollectError('Please enter a valid payment amount');
+      return;
+    }
+
+    const schemeNameOrId = selectedSchemeForCollect ? (selectedSchemeForCollect.loanName || selectedSchemeForCollect.id) : undefined;
+    const currentSchemeStats = selectedSchemeForCollect
+      ? getSchemeStats(customer.id, selectedSchemeForCollect.id || selectedSchemeForCollect.loanName)
+      : getCustomerStats(customer.id);
+
+    if (amount > currentSchemeStats.remainingAmount) {
+      setCollectError(
+        `Amount cannot exceed remaining balance of ₹${currentSchemeStats.remainingAmount.toLocaleString('en-IN')}`
+      );
+      return;
+    }
+
+    setIsCollecting(true);
+    const result = recordPayment(customer.id, amount, collectMethod, schemeNameOrId);
+    setIsCollecting(false);
+
+    if (result.success && result.receipt) {
+      selectCustomer(customer.id);
+      setIsCollectModalVisible(false);
+      setCollectAmount('');
+      setCollectError('');
+      Alert.alert(
+        'Collection Recorded! ✓',
+        `Payment of ₹${amount.toLocaleString('en-IN')} recorded for ${customer.name}${
+          selectedSchemeForCollect ? ` (${selectedSchemeForCollect.loanName || 'Scheme'})` : ''
+        }.\n\nReceipt #${result.receipt.receiptNumber} generated.`
+      );
+    } else {
+      setCollectError(result.error || 'Failed to record collection');
+    }
+  };
+
   const handleSendMessage = () => {
     let defaultMsg = '';
     if (isOverdue) {
@@ -288,18 +509,101 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
           </View>
         </Card>
 
-        {/* Lending Terms & Collection Card */}
+        {/* Lending Terms & Active Schemes */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Lending & Collection Terms</Text>
-          <TouchableOpacity
-            style={styles.editTermsBtn}
-            onPress={handleOpenEditModal}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.editTermsBtnText}>✏️ Edit Terms</Text>
-          </TouchableOpacity>
+          <Text style={styles.sectionTitle}>
+            Active Schemes ({Array.isArray(customer.enrolledSchemes) && customer.enrolledSchemes.length > 0 ? customer.enrolledSchemes.length : 1})
+          </Text>
+          <View style={{ flexDirection: 'row', gap: SPACING.xs }}>
+            <TouchableOpacity
+              style={styles.addSchemeBtn}
+              onPress={handleOpenAddLoanModal}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.addSchemeBtnText}>➕ Add Second Scheme</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.editTermsBtn}
+              onPress={handleOpenEditModal}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.editTermsBtnText}>✏️ Edit Terms</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
+        {/* Individual Scheme Breakdown Cards */}
+        {Array.isArray(customer.enrolledSchemes) && customer.enrolledSchemes.length > 0 && (
+          <View style={styles.schemesListContainer}>
+            {customer.enrolledSchemes.map((schemeItem: any, idx: number) => {
+              const p = Number(schemeItem.payoutAmount || 0);
+              const i = Number(schemeItem.interestAmount || 0);
+              const t = Number(schemeItem.totalAmount || (p + i) || 0);
+              const c = Number(schemeItem.collectionAmount || 0);
+              const dur = Number(schemeItem.durationInstallments || 50);
+              const f = schemeItem.frequency || customer.frequency || 'daily';
+              const name = schemeItem.loanName || `Scheme #${idx + 1}`;
+              const sDate = schemeItem.startDate ? formatDateShort(schemeItem.startDate) : 'Active';
+
+              const schemeStats = getSchemeStats(customer.id, schemeItem.id || name);
+              const isSchemeSettled = schemeStats.remainingAmount === 0 && t > 0;
+
+              return (
+                <Card key={schemeItem.id || idx} style={styles.schemeItemCard}>
+                  <View style={styles.schemeItemHeader}>
+                    <View style={styles.schemeBadge}>
+                      <Text style={styles.schemeBadgeText}>{name}</Text>
+                    </View>
+                    <Text style={styles.schemeDateText}>Disbursed: {sDate}</Text>
+                  </View>
+
+                  <View style={styles.schemeGrid}>
+                    <View style={styles.schemeGridCol}>
+                      <Text style={styles.schemeGridLabel}>PAYOUT GIVEN</Text>
+                      <Text style={styles.schemeGridVal}>₹{p.toLocaleString('en-IN')}</Text>
+                    </View>
+                    <View style={styles.schemeGridCol}>
+                      <Text style={styles.schemeGridLabel}>INTEREST</Text>
+                      <Text style={[styles.schemeGridVal, { color: '#D97706' }]}>₹{i.toLocaleString('en-IN')}</Text>
+                    </View>
+                    <View style={styles.schemeGridCol}>
+                      <Text style={styles.schemeGridLabel}>TOTAL REPAYABLE</Text>
+                      <Text style={[styles.schemeGridVal, { fontWeight: '700', color: COLORS.primary }]}>
+                        ₹{t.toLocaleString('en-IN')}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.schemeFooter}>
+                    <Text style={styles.schemeFooterText}>
+                      Installment: <Text style={{ fontWeight: '700', color: COLORS.secondary }}>₹{c.toLocaleString('en-IN')}</Text> / {formatFrequency(f)} ({dur} cycles)
+                    </Text>
+                  </View>
+
+                  <View style={styles.schemeActionRow}>
+                    <View style={styles.schemeProgressMini}>
+                      <Text style={styles.schemeProgressMiniText}>
+                        Paid: <Text style={{ color: COLORS.success, fontWeight: '700' }}>₹{schemeStats.paidAmount.toLocaleString('en-IN')}</Text> · Rem: <Text style={{ color: COLORS.danger, fontWeight: '700' }}>₹{schemeStats.remainingAmount.toLocaleString('en-IN')}</Text>
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.schemeCollectBtn, isSchemeSettled && styles.schemeCollectBtnSettled]}
+                      onPress={() => handleOpenSchemeCollect(schemeItem)}
+                      activeOpacity={0.8}
+                      disabled={isSchemeSettled}
+                    >
+                      <Text style={styles.schemeCollectBtnText}>
+                        {isSchemeSettled ? '✓ Settled' : `✓ Collect ${name}`}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </Card>
+              );
+            })}
+          </View>
+        )}
+
+        <Text style={styles.combinedSummaryHeader}>Combined Lending Terms & Collection</Text>
         <Card style={styles.infoCard}>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Customer ID (Login ID)</Text>
@@ -358,7 +662,8 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
 
           <TouchableOpacity
             style={[styles.actionBtn, isOverdue && styles.overdueActionBtn]}
-            onPress={() => navigation.navigate('Collections', { customerId: customer.id })}
+            onPress={handleOpenOverallCollect}
+            activeOpacity={0.8}
           >
             <Text style={styles.actionBtnText}>
               {isOverdue
@@ -580,6 +885,243 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Modal: Add Second Scheme / Disburse New Loan */}
+      <Modal
+        visible={isAddLoanModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsAddLoanModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Disburse New Scheme</Text>
+                <Text style={styles.modalSub}>
+                  Add another lending account to {customer.name} ({customer.id})
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setIsAddLoanModalVisible(false)}
+              >
+                <Text style={styles.modalCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {newLoanError ? (
+              <Text style={styles.errorTextBanner}>{newLoanError}</Text>
+            ) : null}
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <FormInput
+                label="Scheme / Loan Name"
+                placeholder="e.g. Scheme #2, Business Loan"
+                value={newLoanName}
+                onChangeText={setNewLoanName}
+              />
+
+              <View style={styles.modalTwoCol}>
+                <View style={{ flex: 1, marginRight: SPACING.sm }}>
+                  <FormInput
+                    label="Payout Given (₹)"
+                    placeholder="e.g. 20000"
+                    value={newPayout}
+                    onChangeText={handleNewPayoutChange}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <FormInput
+                    label="Interest (₹)"
+                    placeholder="e.g. 2000"
+                    value={newInterest}
+                    onChangeText={handleNewInterestChange}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.modalTwoCol}>
+                <View style={{ flex: 1, marginRight: SPACING.sm }}>
+                  <FormInput
+                    label="Total Repayment (₹)"
+                    placeholder="e.g. 22000"
+                    value={newTotal}
+                    onChangeText={handleNewTotalChange}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <FormInput
+                    label="Installment (₹)"
+                    placeholder="e.g. 550"
+                    value={newCollection}
+                    onChangeText={handleNewCollectionChange}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+
+              <FormInput
+                label="Total Installments / Cycles"
+                placeholder="e.g. 40"
+                value={newDuration}
+                onChangeText={handleNewDurationChange}
+                keyboardType="numeric"
+              />
+
+              <FormInput
+                label="Disbursement / Start Date (YYYY-MM-DD)"
+                placeholder="e.g. 2026-09-09"
+                value={newStartDate}
+                onChangeText={setNewStartDate}
+              />
+
+              {/* Frequency Selection */}
+              <Text style={styles.fieldLabel}>Collection Frequency</Text>
+              <View style={styles.freqContainer}>
+                {(['daily', 'every_3_days', 'weekly', 'monthly'] as const).map((freq) => (
+                  <TouchableOpacity
+                    key={freq}
+                    style={[styles.freqBtn, newFrequency === freq && styles.freqBtnSelected]}
+                    onPress={() => setNewFrequency(freq)}
+                  >
+                    <Text style={[styles.freqBtnText, newFrequency === freq && styles.freqBtnTextSelected]}>
+                      {freq.replace(/_/g, ' ')}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Button
+                title={isAddingLoan ? "Disbursing Scheme..." : "Confirm & Disburse Scheme"}
+                onPress={handleSaveNewLoan}
+                style={{ marginTop: SPACING.md }}
+              />
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Modal: Record Collection / Collect Payment */}
+      <Modal
+        visible={isCollectModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsCollectModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Record Collection</Text>
+                <Text style={styles.modalSub}>
+                  {customer.name} · ID: {customer.id}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsCollectModalVisible(false)}>
+                <Text style={styles.modalCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {collectError ? (
+              <Text style={styles.errorTextBanner}>{collectError}</Text>
+            ) : null}
+
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {/* Scheme Picker (if multiple schemes exist) */}
+              {Array.isArray(customer.enrolledSchemes) && customer.enrolledSchemes.length > 1 && (
+                <View style={{ marginBottom: SPACING.md }}>
+                  <Text style={styles.fieldLabel}>Select Scheme to Collect For</Text>
+                  <View style={styles.modalSchemePicker}>
+                    {customer.enrolledSchemes.map((s: any, idx: number) => {
+                      const isSelected =
+                        (selectedSchemeForCollect?.id && s.id === selectedSchemeForCollect.id) ||
+                        (selectedSchemeForCollect?.loanName && s.loanName === selectedSchemeForCollect.loanName);
+                      const sName = s.loanName || `Scheme #${idx + 1}`;
+                      const sStats = getSchemeStats(customer.id, s.id || sName);
+
+                      return (
+                        <TouchableOpacity
+                          key={s.id || idx}
+                          style={[styles.modalSchemeChip, isSelected && styles.modalSchemeChipActive]}
+                          onPress={() => {
+                            setSelectedSchemeForCollect(s);
+                            setCollectAmount(s.collectionAmount ? s.collectionAmount.toString() : '');
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Text
+                            style={[
+                              styles.modalSchemeChipText,
+                              isSelected && styles.modalSchemeChipTextActive,
+                            ]}
+                          >
+                            {sName} (₹{Number(s.collectionAmount || 0).toLocaleString('en-IN')})
+                          </Text>
+                          <Text
+                            style={[
+                              styles.modalSchemeChipSub,
+                              isSelected && styles.modalSchemeChipSubActive,
+                            ]}
+                          >
+                            Rem: ₹{sStats.remainingAmount.toLocaleString('en-IN')}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
+              <FormInput
+                label="Collection Amount (₹)"
+                placeholder="e.g. 1000"
+                value={collectAmount}
+                onChangeText={setCollectAmount}
+                keyboardType="numeric"
+              />
+
+              {/* Payment Method Selector */}
+              <Text style={styles.fieldLabel}>Payment Mode</Text>
+              <View style={styles.paymentMethodRow}>
+                {(['Cash', 'UPI', 'Bank Transfer', 'Card'] as const).map((method) => (
+                  <TouchableOpacity
+                    key={method}
+                    style={[
+                      styles.paymentMethodBtn,
+                      collectMethod === method && styles.paymentMethodBtnActive,
+                    ]}
+                    onPress={() => setCollectMethod(method)}
+                  >
+                    <Text
+                      style={[
+                        styles.paymentMethodText,
+                        collectMethod === method && styles.paymentMethodTextActive,
+                      ]}
+                    >
+                      {method === 'Cash' ? '💵 Cash' : method === 'UPI' ? '📱 UPI' : method === 'Card' ? '💳 Card' : '🏦 Bank'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Button
+                title={isCollecting ? 'Recording Payment...' : 'Confirm Collection'}
+                onPress={handleConfirmCollection}
+                style={{ marginTop: SPACING.md }}
+              />
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -727,6 +1269,19 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.h3,
     color: COLORS.primary,
   },
+  addSchemeBtn: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
+    borderWidth: 1,
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  addSchemeBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#15803D',
+    fontSize: 12,
+  },
   editTermsBtn: {
     backgroundColor: '#EFF6FF',
     borderColor: '#BFDBFE',
@@ -739,6 +1294,76 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.captionBold,
     color: '#2563EB',
     fontSize: 12,
+  },
+  schemesListContainer: {
+    marginBottom: SPACING.md,
+  },
+  schemeItemCard: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+  schemeItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  schemeBadge: {
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  schemeBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#0284C7',
+    fontSize: 11,
+  },
+  schemeDateText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+  },
+  schemeGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: SPACING.sm,
+    marginBottom: SPACING.xs,
+  },
+  schemeGridCol: {
+    flex: 1,
+  },
+  schemeGridLabel: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textLight,
+    fontSize: 9,
+    marginBottom: 2,
+  },
+  schemeGridVal: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.primary,
+    fontSize: 13,
+  },
+  schemeFooter: {
+    paddingTop: 4,
+  },
+  schemeFooterText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    fontSize: 11,
+  },
+  combinedSummaryHeader: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.textLight,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: SPACING.xs,
+    marginTop: SPACING.xs,
   },
   infoCard: {
     marginBottom: SPACING.lg,
@@ -895,6 +1520,11 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     padding: 4,
   },
+  modalSub: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
   modalTwoCol: {
     flexDirection: 'row',
   },
@@ -938,6 +1568,100 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   freqBtnTextSelected: {
+    color: COLORS.white,
+  },
+  // Scheme Action & Collect Styles
+  schemeActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: SPACING.xs + 2,
+    paddingTop: SPACING.xs + 2,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  schemeProgressMini: {
+    flex: 1,
+    marginRight: SPACING.sm,
+  },
+  schemeProgressMiniText: {
+    ...TYPOGRAPHY.caption,
+    fontSize: 11,
+    color: COLORS.textMuted,
+  },
+  schemeCollectBtn: {
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  schemeCollectBtnSettled: {
+    backgroundColor: '#94A3B8',
+  },
+  schemeCollectBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.white,
+    fontSize: 11,
+  },
+  // Collection Modal Scheme Picker & Method
+  modalSchemePicker: {
+    gap: 6,
+    marginBottom: SPACING.xs,
+  },
+  modalSchemeChip: {
+    padding: SPACING.sm,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    backgroundColor: '#F8FAFC',
+  },
+  modalSchemeChipActive: {
+    borderColor: COLORS.secondary,
+    backgroundColor: '#EFF6FF',
+  },
+  modalSchemeChipText: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    fontSize: 12,
+    color: COLORS.text,
+  },
+  modalSchemeChipTextActive: {
+    color: COLORS.secondary,
+  },
+  modalSchemeChipSub: {
+    ...TYPOGRAPHY.caption,
+    fontSize: 10,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  modalSchemeChipSubActive: {
+    color: '#1D4ED8',
+    fontWeight: '600',
+  },
+  paymentMethodRow: {
+    flexDirection: 'row',
+    gap: SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  paymentMethodBtn: {
+    flex: 1,
+    paddingVertical: SPACING.sm,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paymentMethodBtnActive: {
+    backgroundColor: COLORS.secondary,
+    borderColor: COLORS.secondary,
+  },
+  paymentMethodText: {
+    ...TYPOGRAPHY.captionBold,
+    fontSize: 11,
+    color: COLORS.textMuted,
+  },
+  paymentMethodTextActive: {
     color: COLORS.white,
   },
 });

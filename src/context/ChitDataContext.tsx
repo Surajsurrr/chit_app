@@ -6,6 +6,7 @@ import {
   Scheme,
   Receipt,
   EnrolledScheme,
+  LendingLoan,
   INITIAL_CUSTOMERS,
   INITIAL_PAYMENTS,
   INITIAL_RECEIPTS,
@@ -120,11 +121,36 @@ export interface ChitDataContextType {
   updateAdminProfile: (
     updatedData: Partial<AdminCredentials>
   ) => Promise<{ success: boolean; error?: string }>;
+  addLoanToCustomer: (
+    customerId: string,
+    loanData: {
+      payoutAmount: number;
+      interestAmount: number;
+      interestRate?: number;
+      totalAmount: number;
+      collectionAmount: number;
+      durationInstallments: number;
+      frequency: 'daily' | 'every_3_days' | 'weekly' | 'monthly';
+      startDate?: string;
+      nextPaymentDate?: string;
+      loanName?: string;
+    }
+  ) => Promise<{ success: boolean; loanId?: string; error?: string }>;
   recordPayment: (
     customerId: string,
     amount: number,
-    method: 'UPI' | 'Cash' | 'Card' | 'Bank Transfer'
+    method: 'UPI' | 'Cash' | 'Card' | 'Bank Transfer',
+    schemeNameOrId?: string
   ) => { success: boolean; error?: string; receipt?: Receipt };
+  getSchemeStats: (
+    customerId: string,
+    schemeIdOrName?: string
+  ) => {
+    paidAmount: number;
+    remainingAmount: number;
+    totalAmount: number;
+    progressPercentage: number;
+  };
   resetData: () => Promise<void>;
   refreshFromCloud: () => Promise<void>;
   
@@ -398,6 +424,105 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return { success: true };
   };
 
+  const addLoanToCustomer = async (
+    customerId: string,
+    loanData: {
+      payoutAmount: number;
+      interestAmount: number;
+      interestRate?: number;
+      totalAmount: number;
+      collectionAmount: number;
+      durationInstallments: number;
+      frequency: 'daily' | 'every_3_days' | 'weekly' | 'monthly';
+      startDate?: string;
+      nextPaymentDate?: string;
+      loanName?: string;
+    }
+  ): Promise<{ success: boolean; loanId?: string; error?: string }> => {
+    const target = customers.find((c) => c.id === customerId);
+    if (!target) {
+      return { success: false, error: 'Customer record not found' };
+    }
+
+    // Existing loans list
+    const existingLoans: any[] = Array.isArray(target.enrolledSchemes) && target.enrolledSchemes.length > 0
+      ? [...target.enrolledSchemes]
+      : [
+          {
+            id: 'LOAN-1',
+            loanName: 'Scheme #1',
+            payoutAmount: target.payoutAmount || 0,
+            interestAmount: target.interestAmount || 0,
+            interestRate: target.interestRate || 0,
+            totalAmount: target.totalAmount || target.amountGiven || 0,
+            collectionAmount: target.collectionAmount || 0,
+            durationInstallments: target.durationInstallments || 50,
+            frequency: target.frequency || 'daily',
+            startDate: target.startDate || new Date().toISOString(),
+            nextPaymentDate: target.nextPaymentDate || new Date().toISOString(),
+            status: 'active',
+            createdAt: target.startDate || new Date().toISOString(),
+          },
+        ];
+
+    const newLoanId = `LOAN-${existingLoans.length + 1}`;
+    const newLoanName = loanData.loanName || `Scheme #${existingLoans.length + 1}`;
+    const pAmt = loanData.payoutAmount || 0;
+    const iAmt = loanData.interestAmount || 0;
+    const totAmt = loanData.totalAmount || (pAmt + iAmt);
+    const colAmt = loanData.collectionAmount || 0;
+    const dur = loanData.durationInstallments || (colAmt > 0 && totAmt > 0 ? Math.ceil(totAmt / colAmt) : 50);
+    const rate = loanData.interestRate ?? (pAmt > 0 ? (iAmt / pAmt) * 100 : 0);
+
+    const newLoan = {
+      id: newLoanId,
+      loanName: newLoanName,
+      payoutAmount: pAmt,
+      interestAmount: iAmt,
+      interestRate: rate,
+      totalAmount: totAmt,
+      collectionAmount: colAmt,
+      durationInstallments: dur,
+      frequency: loanData.frequency,
+      startDate: loanData.startDate || new Date().toISOString(),
+      nextPaymentDate: loanData.nextPaymentDate || loanData.startDate || new Date().toISOString(),
+      status: 'active',
+      createdAt: new Date().toISOString(),
+    };
+
+    const allLoans = [...existingLoans, newLoan];
+
+    // Compute aggregated totals across all active loans
+    const sumPayout = allLoans.reduce((sum, l) => sum + (Number(l.payoutAmount) || 0), 0);
+    const sumInterest = allLoans.reduce((sum, l) => sum + (Number(l.interestAmount) || 0), 0);
+    const sumTotal = allLoans.reduce((sum, l) => sum + (Number(l.totalAmount) || 0), 0);
+    const sumCollection = allLoans.reduce((sum, l) => sum + (Number(l.collectionAmount) || 0), 0);
+
+    const updates: Partial<Customer> = {
+      payoutAmount: sumPayout,
+      interestAmount: sumInterest,
+      interestRate: sumPayout > 0 ? (sumInterest / sumPayout) * 100 : 0,
+      totalAmount: sumTotal,
+      amountGiven: sumTotal,
+      collectionAmount: sumCollection,
+      durationInstallments: dur,
+      frequency: loanData.frequency,
+      enrolledSchemes: allLoans,
+      nextPaymentDate: loanData.nextPaymentDate || target.nextPaymentDate,
+    };
+
+    const res = await dbService.updateCustomer(customerId, updates);
+    if (!res.success) {
+      return res;
+    }
+
+    setCustomers((prev) =>
+      prev.map((c) => (c.id === customerId ? { ...c, ...updates } : c))
+    );
+
+    return { success: true, loanId: newLoanId };
+  };
+
   const addScheme = async (newSchemeData: Omit<Scheme, 'id' | 'startDate' | 'status'>): Promise<void> => {
     const newId = `scheme-${Date.now()}`;
     const newScheme: Scheme = {
@@ -583,26 +708,164 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return { success: true };
   };
 
+  const getSchemeStats = (
+    customerId: string,
+    schemeIdOrName?: string
+  ): {
+    paidAmount: number;
+    remainingAmount: number;
+    totalAmount: number;
+    progressPercentage: number;
+  } => {
+    const customer = customers.find((c) => c.id === customerId);
+    if (!customer) {
+      return { paidAmount: 0, remainingAmount: 0, totalAmount: 0, progressPercentage: 0 };
+    }
+
+    const schemesList: any[] = Array.isArray(customer.enrolledSchemes) ? customer.enrolledSchemes : [];
+    if (schemesList.length === 0 || !schemeIdOrName) {
+      const overallStats = getCustomerStats(customerId);
+      return {
+        paidAmount: overallStats.paidAmount,
+        remainingAmount: overallStats.remainingAmount,
+        totalAmount: overallStats.totalAmount,
+        progressPercentage: overallStats.progressPercentage,
+      };
+    }
+
+    const cleanQuery = schemeIdOrName.trim().toLowerCase();
+    const matchedIndex = schemesList.findIndex((s, idx) => {
+      const sId = (s.id || '').toLowerCase();
+      const sLoanName = (s.loanName || '').toLowerCase();
+      const sSchemeName = (s.schemeName || '').toLowerCase();
+      return (
+        sId === cleanQuery ||
+        sLoanName === cleanQuery ||
+        sSchemeName === cleanQuery ||
+        `scheme #${idx + 1}` === cleanQuery ||
+        `loan #${idx + 1}` === cleanQuery
+      );
+    });
+
+    const matchedScheme = matchedIndex >= 0 ? schemesList[matchedIndex] : schemesList[0];
+    const isFirstScheme = matchedIndex <= 0;
+
+    const schemeTotal = Number(
+      matchedScheme?.totalAmount ||
+      (Number(matchedScheme?.payoutAmount || 0) + Number(matchedScheme?.interestAmount || 0)) ||
+      (customer.totalAmount || customer.amountGiven || 0)
+    );
+
+    const matchedName = (matchedScheme?.loanName || matchedScheme?.schemeName || `Scheme #${matchedIndex + 1}`).toLowerCase();
+    const matchedId = (matchedScheme?.id || '').toLowerCase();
+
+    // Identify all other schemes' IDs and names
+    const otherSchemes = schemesList.filter((_, idx) => idx !== (matchedIndex >= 0 ? matchedIndex : 0));
+    const otherIdentifiers: string[] = [];
+    otherSchemes.forEach((s, idx) => {
+      if (s.id) otherIdentifiers.push(s.id.toLowerCase());
+      if (s.loanName) otherIdentifiers.push(s.loanName.toLowerCase());
+      if (s.schemeName) otherIdentifiers.push(s.schemeName.toLowerCase());
+    });
+
+    const allCustomerPayments = payments.filter((p) => p.customerId === customerId);
+
+    let effectivePayments: Payment[] = [];
+
+    if (schemesList.length <= 1) {
+      // If customer has 1 scheme, all their payments belong here
+      effectivePayments = allCustomerPayments;
+    } else if (isFirstScheme) {
+      // Primary scheme (Scheme #1): Gets all payments that are NOT explicitly for subsequent schemes
+      effectivePayments = allCustomerPayments.filter((p) => {
+        const pScheme = (p.schemeName || '').toLowerCase();
+        const pLoanId = ((p as any).loanId || '').toLowerCase();
+
+        // If explicitly belongs to another scheme, exclude it
+        const belongsToOther = otherIdentifiers.some(
+          (id) => (pLoanId && pLoanId === id) || (pScheme && pScheme === id)
+        );
+        if (belongsToOther) {
+          return false;
+        }
+
+        // All other customer payments (including legacy payments recorded before Scheme #2 existed) belong to Scheme #1!
+        return true;
+      });
+    } else {
+      // Subsequent schemes (Scheme #2, #3, etc.): Only payments explicitly recorded for this scheme
+      effectivePayments = allCustomerPayments.filter((p) => {
+        const pScheme = (p.schemeName || '').toLowerCase();
+        const pLoanId = ((p as any).loanId || '').toLowerCase();
+
+        return (
+          (matchedId && pLoanId === matchedId) ||
+          pScheme === matchedName ||
+          pScheme === `scheme #${matchedIndex + 1}` ||
+          pScheme === `loan #${matchedIndex + 1}`
+        );
+      });
+    }
+
+    const paidAmount = effectivePayments.reduce((sum, p) => sum + p.amount, 0);
+    const remainingAmount = Math.max(0, schemeTotal - paidAmount);
+    const progressPercentage = schemeTotal > 0 ? (paidAmount / schemeTotal) * 100 : 0;
+
+    return {
+      paidAmount,
+      remainingAmount,
+      totalAmount: schemeTotal,
+      progressPercentage,
+    };
+  };
+
   const recordPayment = (
     customerId: string,
     amount: number,
-    method: 'UPI' | 'Cash' | 'Card' | 'Bank Transfer'
+    method: 'UPI' | 'Cash' | 'Card' | 'Bank Transfer',
+    schemeNameOrId?: string
   ): { success: boolean; error?: string; receipt?: Receipt } => {
     const customer = customers.find((c) => c.id === customerId);
     if (!customer) {
       return { success: false, error: 'Customer not found' };
     }
 
-    const stats = getCustomerStats(customerId);
     if (amount <= 0) {
       return { success: false, error: 'Payment amount must be greater than 0' };
     }
-    if (amount > stats.remainingAmount) {
-      return { success: false, error: `Payment cannot exceed remaining balance of ₹${stats.remainingAmount}` };
-    }
 
-    const scheme = schemes.find((s) => s.id === customer.schemeId);
-    const schemeName = scheme ? scheme.name : 'Chit Scheme';
+    const enrolledList: any[] = Array.isArray(customer.enrolledSchemes) ? customer.enrolledSchemes : [];
+    const matchedLoan = schemeNameOrId
+      ? enrolledList.find(
+          (s) => s.id === schemeNameOrId || s.loanName === schemeNameOrId || s.schemeName === schemeNameOrId
+        )
+      : (enrolledList.length > 0 ? enrolledList[0] : null);
+
+    const schemeName = matchedLoan
+      ? (matchedLoan.loanName || matchedLoan.schemeName || 'Scheme #1')
+      : (schemes.find((s) => s.id === customer.schemeId)?.name || 'Chit Scheme');
+
+    const loanId = matchedLoan?.id;
+
+    // Check balance
+    const overallStats = getCustomerStats(customerId);
+    const targetStats = matchedLoan ? getSchemeStats(customerId, matchedLoan.id) : overallStats;
+
+    if (enrolledList.length > 1 && matchedLoan) {
+      if (amount > targetStats.remainingAmount) {
+        return {
+          success: false,
+          error: `Payment of ₹${amount.toLocaleString('en-IN')} exceeds the remaining balance of ₹${targetStats.remainingAmount.toLocaleString('en-IN')} for ${schemeName}`,
+        };
+      }
+    } else {
+      if (amount > overallStats.remainingAmount) {
+        return {
+          success: false,
+          error: `Payment cannot exceed remaining balance of ₹${overallStats.remainingAmount.toLocaleString('en-IN')}`,
+        };
+      }
+    }
 
     const timestamp = new Date();
     const paymentId = `pay-${Date.now()}`;
@@ -614,7 +877,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const random = Math.floor(1000 + Math.random() * 9000);
     const receiptNumber = `REC-${year}${month}-${random}`;
 
-    const newRemainingBalance = stats.remainingAmount - amount;
+    const newRemainingBalance = targetStats.remainingAmount - amount;
 
     // 1. Create Payment record
     const newPayment: Payment = {
@@ -626,6 +889,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       method,
       receiptId,
       schemeName,
+      loanId,
     };
 
     // 2. Create Receipt record
@@ -639,6 +903,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       amount,
       method: `${method} payment`,
       schemeName,
+      loanId,
       remainingBalance: newRemainingBalance,
       referenceId: `REF${Date.now().toString().slice(-9)}`,
     };
@@ -655,15 +920,32 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const baseDate = isOverdueOrDueToday ? timestamp.toISOString() : customer.nextPaymentDate;
 
     // Number of installment cycles covered by this payment amount
-    const installmentAmount = customer.collectionAmount > 0 ? customer.collectionAmount : amount;
-    const cycles = Math.max(1, Math.floor(amount / installmentAmount));
+    const installmentAmount = matchedLoan?.collectionAmount || customer.collectionAmount || amount;
+    const frequency = matchedLoan?.frequency || customer.frequency || 'daily';
+    const cycles = Math.max(1, Math.floor(amount / (installmentAmount > 0 ? installmentAmount : 1)));
 
-    const nextPayDate = calculateNextPaymentDate(baseDate, customer.frequency, cycles);
+    const nextPayDate = calculateNextPaymentDate(baseDate, frequency, cycles);
+
+    // If customer has enrolled schemes, update the specific scheme's nextPaymentDate
+    let updatedEnrolledSchemes = customer.enrolledSchemes;
+    if (Array.isArray(customer.enrolledSchemes) && matchedLoan) {
+      updatedEnrolledSchemes = customer.enrolledSchemes.map((s: any) => {
+        if (s.id === matchedLoan.id) {
+          return {
+            ...s,
+            nextPaymentDate: nextPayDate,
+          };
+        }
+        return s;
+      });
+    }
+
     const updatedCustomers = customers.map((c) => {
       if (c.id === customerId) {
         return {
           ...c,
           nextPaymentDate: nextPayDate,
+          enrolledSchemes: updatedEnrolledSchemes,
         };
       }
       return c;
@@ -681,7 +963,10 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     dbService.recordPayment(newPayment, newReceipt).catch((err) =>
       console.error('dbService.recordPayment error:', err)
     );
-    dbService.updateCustomer(customerId, { nextPaymentDate: nextPayDate }).catch((err) =>
+    dbService.updateCustomer(customerId, {
+      nextPaymentDate: nextPayDate,
+      enrolledSchemes: updatedEnrolledSchemes,
+    }).catch((err) =>
       console.error('dbService.updateCustomer nextPaymentDate error:', err)
     );
 
@@ -965,6 +1250,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         selectCustomer,
         addCustomer,
         updateCustomerTerms,
+        addLoanToCustomer,
         addScheme,
         updateScheme,
         updateCustomerScheme,
@@ -979,6 +1265,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         registerAdmin,
         registerCustomer,
         getCustomerStats,
+        getSchemeStats,
         getAdminStats,
       }}
     >

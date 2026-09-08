@@ -23,13 +23,14 @@ import { formatFrequency, formatDateShort, getPaymentStatusInfo } from '../../ut
 import { StatusBar } from 'expo-status-bar';
 
 export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { customers, getCustomerStats, recordPayment, selectCustomer } = useChitData();
+  const { customers, getCustomerStats, getSchemeStats, recordPayment, selectCustomer } = useChitData();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'ALL' | 'OVERDUE' | 'DUE_TODAY' | 'ACTIVE' | 'SETTLED'>('ALL');
 
   // Collection modal states
   const [isCollectModalVisible, setIsCollectModalVisible] = useState(false);
   const [selectedCust, setSelectedCust] = useState<Customer | null>(null);
+  const [selectedScheme, setSelectedScheme] = useState<any | null>(null);
   const [collectAmount, setCollectAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'Cash' | 'Card' | 'Bank Transfer'>('Cash');
   const [collectError, setCollectError] = useState('');
@@ -69,9 +70,16 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     return true;
   });
 
-  const handleOpenCollect = (cust: Customer) => {
+  const handleOpenCollect = (cust: Customer, schemeItem?: any) => {
     setSelectedCust(cust);
-    setCollectAmount(cust.collectionAmount.toString());
+    const enrolled = Array.isArray(cust.enrolledSchemes) ? cust.enrolledSchemes : [];
+    const targetScheme = schemeItem || (enrolled.length > 0 ? enrolled[0] : null);
+    setSelectedScheme(targetScheme);
+    if (targetScheme && targetScheme.collectionAmount) {
+      setCollectAmount(targetScheme.collectionAmount.toString());
+    } else {
+      setCollectAmount(cust.collectionAmount.toString());
+    }
     setPaymentMethod('Cash');
     setCollectError('');
     setIsCollectModalVisible(true);
@@ -86,26 +94,33 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
       return;
     }
 
-    const custStats = getCustomerStats(selectedCust.id);
-    if (amount > custStats.remainingAmount) {
+    const schemeNameOrId = selectedScheme ? (selectedScheme.loanName || selectedScheme.id) : undefined;
+    const stats = selectedScheme
+      ? getSchemeStats(selectedCust.id, selectedScheme.id || selectedScheme.loanName)
+      : getCustomerStats(selectedCust.id);
+
+    if (amount > stats.remainingAmount) {
       setCollectError(
-        `Amount cannot exceed remaining balance of ₹${custStats.remainingAmount.toLocaleString('en-IN')}`
+        `Amount cannot exceed remaining balance of ₹${stats.remainingAmount.toLocaleString('en-IN')}`
       );
       return;
     }
 
-    const result = recordPayment(selectedCust.id, amount, paymentMethod);
+    const result = recordPayment(selectedCust.id, amount, paymentMethod, schemeNameOrId);
     if (result.success && result.receipt) {
       const customerName = selectedCust.name;
       selectCustomer(selectedCust.id);
       setIsCollectModalVisible(false);
       setSelectedCust(null);
+      setSelectedScheme(null);
       setCollectAmount('');
       setCollectError('');
 
       Alert.alert(
         'Collection Recorded! ✓',
-        `Payment of ₹${amount.toLocaleString('en-IN')} has been recorded for ${customerName}.\n\nReceipt #${result.receipt.receiptNumber} generated.`
+        `Payment of ₹${amount.toLocaleString('en-IN')} has been recorded for ${customerName}${
+          selectedScheme ? ` (${selectedScheme.loanName || 'Scheme'})` : ''
+        }.\n\nReceipt #${result.receipt.receiptNumber} generated.`
       );
     } else {
       setCollectError(result.error || 'Failed to record collection');
@@ -115,6 +130,8 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   const renderCustomerItem = ({ item }: { item: typeof customerData[0] }) => {
     const { customer, stats, totalVal, isSettled, statusInfo } = item;
     const payout = customer.payoutAmount ?? Math.max(0, totalVal - (customer.interestAmount || 0));
+    const enrolledList: any[] = Array.isArray(customer.enrolledSchemes) ? customer.enrolledSchemes : [];
+    const hasMultipleSchemes = enrolledList.length > 1;
 
     return (
       <View style={styles.cardWrapper}>
@@ -164,16 +181,25 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                       : 'Active'}
                   </Text>
                 </View>
+                {hasMultipleSchemes && (
+                  <View style={styles.multiSchemeCountBadge}>
+                    <Text style={styles.multiSchemeCountBadgeText}>
+                      {enrolledList.length} Schemes Active
+                    </Text>
+                  </View>
+                )}
               </View>
               <Text style={styles.phoneText}>📞 +91 {customer.phone}</Text>
-              <Text style={styles.scheduleText}>
-                ₹{customer.collectionAmount.toLocaleString('en-IN')} / {formatFrequency(customer.frequency)} · Next Due: {formatDateShort(customer.nextPaymentDate)}
-              </Text>
+              {!hasMultipleSchemes && (
+                <Text style={styles.scheduleText}>
+                  ₹{customer.collectionAmount.toLocaleString('en-IN')} / {formatFrequency(customer.frequency)} · Next Due: {formatDateShort(customer.nextPaymentDate)}
+                </Text>
+              )}
             </TouchableOpacity>
 
-            {/* Quick Actions */}
+            {/* Quick Actions (Header level: shown only for single scheme) */}
             <View style={styles.headerButtonsContainer}>
-              {!isSettled ? (
+              {!hasMultipleSchemes && (!isSettled ? (
                 <TouchableOpacity
                   style={[styles.collectedBtn, statusInfo.isOverdue && styles.collectedBtnOverdue]}
                   onPress={() => handleOpenCollect(customer)}
@@ -187,7 +213,7 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                 <View style={styles.settledTag}>
                   <Text style={styles.settledTagText}>✓ Settled</Text>
                 </View>
-              )}
+              ))}
 
               <TouchableOpacity
                 style={styles.viewProfileBtn}
@@ -198,6 +224,66 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Individual Scheme Rows with Separate Collect Buttons */}
+          {hasMultipleSchemes && (
+            <View style={styles.multiSchemesList}>
+              {enrolledList.map((schemeItem: any, idx: number) => {
+                const sName = schemeItem.loanName || `Scheme #${idx + 1}`;
+                const sPayout = Number(schemeItem.payoutAmount || 0);
+                const sTotal = Number(schemeItem.totalAmount || (sPayout + Number(schemeItem.interestAmount || 0)));
+                const sCol = Number(schemeItem.collectionAmount || 0);
+                const sFreq = schemeItem.frequency || customer.frequency || 'daily';
+                const sStats = getSchemeStats(customer.id, schemeItem.id || sName);
+                const isSchemeSettled = sStats.remainingAmount === 0 && sTotal > 0;
+
+                return (
+                  <View key={schemeItem.id || idx} style={styles.schemeCardRow}>
+                    <View style={styles.schemeCardLeft}>
+                      <View style={styles.schemeCardTitleRow}>
+                        <View style={styles.schemeNameBadge}>
+                          <Text style={styles.schemeNameBadgeText}>{sName}</Text>
+                        </View>
+                        <Text style={styles.schemeCardSchedule}>
+                          ₹{sCol.toLocaleString('en-IN')} / {formatFrequency(sFreq)}
+                        </Text>
+                      </View>
+                      <View style={styles.schemeCardNumbers}>
+                        <Text style={styles.schemeCardNum}>
+                          Disbursed: <Text style={{ fontWeight: '700', color: '#2563EB' }}>₹{sPayout.toLocaleString('en-IN')}</Text>
+                        </Text>
+                        <Text style={styles.schemeCardNum}>
+                          Total: <Text style={{ fontWeight: '700', color: COLORS.primary }}>₹{sTotal.toLocaleString('en-IN')}</Text>
+                        </Text>
+                        <Text style={styles.schemeCardNum}>
+                          Paid: <Text style={{ fontWeight: '700', color: COLORS.success }}>₹{sStats.paidAmount.toLocaleString('en-IN')}</Text>
+                        </Text>
+                        <Text style={styles.schemeCardNum}>
+                          Rem: <Text style={{ fontWeight: '700', color: COLORS.danger }}>₹{sStats.remainingAmount.toLocaleString('en-IN')}</Text>
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.schemeCardRight}>
+                      {!isSchemeSettled ? (
+                        <TouchableOpacity
+                          style={styles.schemeCollectBtn}
+                          onPress={() => handleOpenCollect(customer, schemeItem)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.schemeCollectBtnText}>✓ Collect {sName}</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={styles.schemeSettledBadge}>
+                          <Text style={styles.schemeSettledBadgeText}>✓ Settled</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
 
           {/* Financial Parameters Row */}
           <TouchableOpacity
@@ -378,6 +464,51 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
               </View>
 
               {collectError ? <Text style={styles.errorTextBanner}>{collectError}</Text> : null}
+
+              {/* Scheme Picker (if customer has multiple schemes) */}
+              {Array.isArray(selectedCust.enrolledSchemes) && selectedCust.enrolledSchemes.length > 1 && (
+                <View style={{ marginBottom: SPACING.md }}>
+                  <Text style={styles.fieldLabel}>Select Scheme to Collect</Text>
+                  <View style={styles.modalSchemePicker}>
+                    {selectedCust.enrolledSchemes.map((s: any, idx: number) => {
+                      const isChosen =
+                        (selectedScheme?.id && s.id === selectedScheme.id) ||
+                        (selectedScheme?.loanName && s.loanName === selectedScheme.loanName);
+                      const sName = s.loanName || `Scheme #${idx + 1}`;
+                      const sStats = getSchemeStats(selectedCust.id, s.id || sName);
+
+                      return (
+                        <TouchableOpacity
+                          key={s.id || idx}
+                          style={[styles.modalSchemeChip, isChosen && styles.modalSchemeChipActive]}
+                          onPress={() => {
+                            setSelectedScheme(s);
+                            setCollectAmount(s.collectionAmount ? s.collectionAmount.toString() : '');
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Text
+                            style={[
+                              styles.modalSchemeChipText,
+                              isChosen && styles.modalSchemeChipTextActive,
+                            ]}
+                          >
+                            {sName} · ₹{Number(s.collectionAmount || 0).toLocaleString('en-IN')} / cycle
+                          </Text>
+                          <Text
+                            style={[
+                              styles.modalSchemeChipSub,
+                              isChosen && styles.modalSchemeChipSubActive,
+                            ]}
+                          >
+                            Remaining Balance: ₹{sStats.remainingAmount.toLocaleString('en-IN')}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
 
               <FormInput
                 label="Collection Amount (₹)"
@@ -778,6 +909,132 @@ const styles = StyleSheet.create({
     padding: SPACING.sm,
     borderRadius: 8,
     marginBottom: SPACING.sm,
+  },
+  // Multi-Scheme Card Styles
+  multiSchemeCountBadge: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  multiSchemeCountBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#2563EB',
+    fontSize: 9,
+  },
+  multiSchemesList: {
+    marginTop: SPACING.xs,
+    marginBottom: SPACING.xs,
+    gap: 6,
+  },
+  schemeCardRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+    borderWidth: 1,
+    borderLeftWidth: 3,
+    borderLeftColor: '#3B82F6',
+    borderRadius: 8,
+    padding: SPACING.xs + 3,
+  },
+  schemeCardLeft: {
+    flex: 1,
+    marginRight: SPACING.sm,
+  },
+  schemeCardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 3,
+  },
+  schemeNameBadge: {
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+  },
+  schemeNameBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#1E40AF',
+    fontSize: 10,
+  },
+  schemeCardSchedule: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    fontSize: 11,
+  },
+  schemeCardNumbers: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  schemeCardNum: {
+    ...TYPOGRAPHY.caption,
+    fontSize: 10.5,
+    color: COLORS.textMuted,
+  },
+  schemeCardRight: {
+    alignItems: 'flex-end',
+  },
+  schemeCollectBtn: {
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  schemeCollectBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.white,
+    fontSize: 11,
+  },
+  schemeSettledBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  schemeSettledBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#15803D',
+    fontSize: 10,
+  },
+  // Modal Scheme Picker
+  modalSchemePicker: {
+    gap: 6,
+    marginBottom: SPACING.xs,
+  },
+  modalSchemeChip: {
+    padding: SPACING.sm,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    backgroundColor: '#F8FAFC',
+  },
+  modalSchemeChipActive: {
+    borderColor: COLORS.secondary,
+    backgroundColor: '#EFF6FF',
+  },
+  modalSchemeChipText: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    fontSize: 12,
+    color: COLORS.text,
+  },
+  modalSchemeChipTextActive: {
+    color: COLORS.secondary,
+  },
+  modalSchemeChipSub: {
+    ...TYPOGRAPHY.caption,
+    fontSize: 10,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  modalSchemeChipSubActive: {
+    color: '#1D4ED8',
+    fontWeight: '600',
   },
 });
 

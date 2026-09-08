@@ -20,7 +20,7 @@ import Card from '../../components/Card';
 import { StatusBar } from 'expo-status-bar';
 
 export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { customers, addCustomer } = useChitData();
+  const { customers, addCustomer, addLoanToCustomer } = useChitData();
   const scrollRef = useRef<ScrollView>(null);
 
   // Compute next suggested Customer ID e.g. CUST-101
@@ -72,10 +72,34 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
     if (submitError) setSubmitError('');
   };
 
+  const handleCustomerIdChange = (val: string) => {
+    setCustomerId(val);
+    if (errors.customerId) setErrors((prev) => ({ ...prev, customerId: '' }));
+    if (submitError) setSubmitError('');
+    const clean = val.trim().toUpperCase();
+    if (clean.length >= 3) {
+      const match = customers.find((c) => c.id.toUpperCase() === clean);
+      if (match) {
+        if (!name.trim()) setName(match.name);
+        if (!pin.trim()) setPin(match.pin);
+        if (!phone.trim()) setPhone(match.phone);
+      }
+    }
+  };
+
   const handlePhoneChange = (val: string) => {
     setPhone(val);
     if (errors.phone) setErrors((prev) => ({ ...prev, phone: '' }));
     if (submitError) setSubmitError('');
+    const clean = val.trim();
+    if (clean.length >= 10) {
+      const match = customers.find((c) => c.phone.trim() === clean);
+      if (match) {
+        if (!name.trim()) setName(match.name);
+        if (!pin.trim()) setPin(match.pin);
+        setCustomerId(match.id);
+      }
+    }
   };
 
   const handlePinChange = (val: string) => {
@@ -83,6 +107,13 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
     if (errors.pin) setErrors((prev) => ({ ...prev, pin: '' }));
     if (submitError) setSubmitError('');
   };
+
+  // Detect if customer is already registered
+  const matchingExistingCust = customers.find(
+    (c) =>
+      (phone.trim().length >= 10 && c.phone.trim() === phone.trim()) ||
+      (customerId.trim() && c.id.toUpperCase() === customerId.trim().toUpperCase())
+  );
 
   // Auto-compute Total Installments / Cycles: TI/C = Total Repayment / Installment
   const computeCycles = (repayment: number, installment: number): string => {
@@ -233,6 +264,41 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
     const dur = parseInt(durationInstallments, 10) || 50;
     const rate = pAmt > 0 ? (iAmt / pAmt) * 100 : 0;
 
+    // If customer already exists, add this as a new scheme/loan to their account!
+    if (matchingExistingCust) {
+      const nextNum = (Array.isArray(matchingExistingCust.enrolledSchemes) ? matchingExistingCust.enrolledSchemes.length : 1) + 1;
+      const res = await addLoanToCustomer(matchingExistingCust.id, {
+        loanName: `Scheme #${nextNum}`,
+        payoutAmount: pAmt,
+        interestAmount: iAmt,
+        interestRate: rate,
+        totalAmount: totAmt,
+        collectionAmount: colAmt,
+        frequency,
+        durationInstallments: dur,
+        startDate: new Date().toISOString(),
+      });
+
+      setIsSubmitting(false);
+
+      if (res.success) {
+        setSuccessCustomer({
+          id: matchingExistingCust.id,
+          name: matchingExistingCust.name,
+          phone: matchingExistingCust.phone,
+          pin: matchingExistingCust.pin,
+          payoutAmount: pAmt,
+          totalAmount: totAmt,
+          collectionAmount: colAmt,
+          frequency,
+        });
+      } else {
+        setSubmitError(`⚠️ ${res.error || 'Could not add scheme to customer profile.'}`);
+        Alert.alert('Registration Failed', res.error || 'Could not add scheme to customer profile.');
+      }
+      return;
+    }
+
     const res = await addCustomer({
       id: cleanId,
       name: registeredName,
@@ -308,7 +374,7 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
               label="Customer ID (Unique Identifier)"
               placeholder="e.g. CUST-101"
               value={customerId}
-              onChangeText={setCustomerId}
+              onChangeText={handleCustomerIdChange}
               autoCapitalize="characters"
               error={errors.customerId}
             />
@@ -341,6 +407,18 @@ export const AddCustomerScreen: React.FC<{ navigation: any }> = ({ navigation })
               secureTextEntry={false}
               error={errors.pin}
             />
+
+            {matchingExistingCust ? (
+              <View style={styles.existingCustBanner}>
+                <Text style={styles.existingCustIcon}>💡</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.existingCustTitle}>Existing Member Account Detected</Text>
+                  <Text style={styles.existingCustText}>
+                    "{matchingExistingCust.name}" ({matchingExistingCust.id}) is already registered. Saving will add this new scheme as Scheme #{((matchingExistingCust.enrolledSchemes?.length || 1) + 1)} to their account!
+                  </Text>
+                </View>
+              </View>
+            ) : null}
           </Card>
 
           {/* Direct Lending Terms Card */}
@@ -683,6 +761,33 @@ const styles = StyleSheet.create({
     color: '#B91C1C',
     flex: 1,
     lineHeight: 20,
+  },
+  existingCustBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1.5,
+    borderColor: '#93C5FD',
+    borderRadius: 12,
+    padding: SPACING.sm + 2,
+    marginTop: SPACING.sm,
+  },
+  existingCustIcon: {
+    fontSize: 18,
+    marginRight: SPACING.xs + 2,
+    marginTop: 1,
+  },
+  existingCustTitle: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#1D4ED8',
+    fontSize: 12,
+  },
+  existingCustText: {
+    ...TYPOGRAPHY.caption,
+    color: '#1E40AF',
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
   },
   submitBtn: {
     marginTop: SPACING.xs,

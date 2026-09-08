@@ -25,13 +25,14 @@ import { getPaymentStatusInfo, formatFrequency, PaymentStatusInfo } from '../../
 import { StatusBar } from 'expo-status-bar';
 
 export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ route, navigation }) => {
-  const { customers, schemes, getCustomerStats, recordPayment, selectCustomer, logout } = useChitData();
+  const { customers, schemes, getCustomerStats, getSchemeStats, recordPayment, selectCustomer, logout } = useChitData();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OVERDUE' | 'DUE_TODAY' | 'PAID'>('ALL');
   
   // Record Payment Modal states
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [selectedCustId, setSelectedCustId] = useState<string | null>(null);
+  const [selectedSchemeIdOrName, setSelectedSchemeIdOrName] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'Cash' | 'Card' | 'Bank Transfer'>('UPI');
   const [formError, setFormError] = useState('');
@@ -49,12 +50,12 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
       const customer = customers.find((c) => c.id === customerId);
       if (customer) {
         setSearchQuery(customer.name);
-        handleOpenCollect(customerId);
+        handleOpenCollect(customerId, route.params?.schemeName);
       }
       // Clear route params after consumption
-      navigation.setParams({ customerId: undefined });
+      navigation.setParams({ customerId: undefined, schemeName: undefined });
     }
-  }, [route.params?.customerId]);
+  }, [route.params?.customerId, route.params?.schemeName]);
 
   const customerDataWithStatus = customers.map((c) => {
     const stats = getCustomerStats(c.id);
@@ -84,11 +85,21 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
     return true;
   });
 
-  const handleOpenCollect = (customerId: string) => {
+  const handleOpenCollect = (customerId: string, schemeNameOrId?: string) => {
     const customer = customers.find((c) => c.id === customerId);
     if (customer) {
       setSelectedCustId(customerId);
-      setPaymentAmount(customer.collectionAmount.toString());
+      const enrolled = Array.isArray(customer.enrolledSchemes) ? customer.enrolledSchemes : [];
+      const targetScheme = schemeNameOrId
+        ? enrolled.find((s: any) => s.id === schemeNameOrId || s.loanName === schemeNameOrId)
+        : (enrolled.length > 0 ? enrolled[0] : null);
+
+      setSelectedSchemeIdOrName(targetScheme ? (targetScheme.loanName || targetScheme.id) : null);
+      if (targetScheme && targetScheme.collectionAmount) {
+        setPaymentAmount(targetScheme.collectionAmount.toString());
+      } else {
+        setPaymentAmount(customer.collectionAmount.toString());
+      }
       setPaymentMethod('UPI');
       setFormError('');
       setIsModalVisible(true);
@@ -105,13 +116,14 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
     }
 
     const targetCustomer = customers.find((c) => c.id === selectedCustId);
-    const result = recordPayment(selectedCustId, amount, paymentMethod);
+    const result = recordPayment(selectedCustId, amount, paymentMethod, selectedSchemeIdOrName || undefined);
     
     if (result.success && result.receipt) {
       selectCustomer(selectedCustId);
       setIsModalVisible(false);
       setPaymentAmount('');
       setSelectedCustId('');
+      setSelectedSchemeIdOrName(null);
       setFormError('');
 
       Alert.alert(
@@ -427,9 +439,58 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
                 <View style={styles.modalStatsCard}>
                   <Text style={styles.statsLabel}>REMAINING BALANCE</Text>
                   <Text style={styles.statsValue}>
-                    ₹{getCustomerStats(selectedCustomer.id).remainingAmount.toLocaleString('en-IN')}
+                    ₹{(selectedSchemeIdOrName
+                      ? getSchemeStats(selectedCustomer.id, selectedSchemeIdOrName).remainingAmount
+                      : getCustomerStats(selectedCustomer.id).remainingAmount
+                    ).toLocaleString('en-IN')}
                   </Text>
                 </View>
+
+                {/* Scheme Picker (if multiple schemes exist) */}
+                {Array.isArray(selectedCustomer.enrolledSchemes) && selectedCustomer.enrolledSchemes.length > 1 && (
+                  <View style={{ marginBottom: SPACING.md }}>
+                    <Text style={styles.modalLabel}>Select Scheme to Collect</Text>
+                    <View style={styles.modalSchemePicker}>
+                      {selectedCustomer.enrolledSchemes.map((s: any, idx: number) => {
+                        const isChosen =
+                          selectedSchemeIdOrName === s.id ||
+                          selectedSchemeIdOrName === s.loanName ||
+                          (!selectedSchemeIdOrName && idx === 0);
+                        const sName = s.loanName || `Scheme #${idx + 1}`;
+                        const sStats = getSchemeStats(selectedCustomer.id, s.id || sName);
+
+                        return (
+                          <TouchableOpacity
+                            key={s.id || idx}
+                            style={[styles.modalSchemeChip, isChosen && styles.modalSchemeChipActive]}
+                            onPress={() => {
+                              setSelectedSchemeIdOrName(s.loanName || s.id);
+                              setPaymentAmount(s.collectionAmount ? s.collectionAmount.toString() : '');
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <Text
+                              style={[
+                                styles.modalSchemeChipText,
+                                isChosen && styles.modalSchemeChipTextActive,
+                              ]}
+                            >
+                              {sName} · ₹{Number(s.collectionAmount || 0).toLocaleString('en-IN')} / cycle
+                            </Text>
+                            <Text
+                              style={[
+                                styles.modalSchemeChipSub,
+                                isChosen && styles.modalSchemeChipSubActive,
+                              ]}
+                            >
+                              Remaining Balance: ₹{sStats.remainingAmount.toLocaleString('en-IN')}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
 
                 {formError ? <Text style={styles.modalError}>{formError}</Text> : null}
 
@@ -1101,6 +1162,39 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.bodyMediumBold,
     color: COLORS.white,
     fontSize: 14,
+  },
+  modalSchemePicker: {
+    gap: 6,
+    marginBottom: SPACING.xs,
+  },
+  modalSchemeChip: {
+    padding: SPACING.sm,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    backgroundColor: '#F8FAFC',
+  },
+  modalSchemeChipActive: {
+    borderColor: COLORS.secondary,
+    backgroundColor: '#EFF6FF',
+  },
+  modalSchemeChipText: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    fontSize: 12,
+    color: COLORS.text,
+  },
+  modalSchemeChipTextActive: {
+    color: COLORS.secondary,
+  },
+  modalSchemeChipSub: {
+    ...TYPOGRAPHY.caption,
+    fontSize: 10,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  modalSchemeChipSubActive: {
+    color: '#1D4ED8',
+    fontWeight: '600',
   },
 });
 
