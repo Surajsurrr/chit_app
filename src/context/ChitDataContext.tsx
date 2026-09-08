@@ -239,21 +239,56 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setPayments(cloudPayments || []);
       setReceipts(cloudReceipts || []);
 
-      // Restore session preferences
+      // Restore session preferences with database presence verification
       const savedRole = await AsyncStorage.getItem(STORAGE_KEYS.ROLE);
       const savedSelectedCust = await AsyncStorage.getItem(STORAGE_KEYS.SELECTED_CUST);
       const savedIsLoggedIn = await AsyncStorage.getItem(STORAGE_KEYS.IS_LOGGED_IN);
       const savedCurrentUserId = await AsyncStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
       const savedCurrentAdminUser = await AsyncStorage.getItem(STORAGE_KEYS.CURRENT_ADMIN_USER);
 
-      if (savedRole) {
-        setCurrentRoleState(savedRole as UserRole);
-        setCurrentUserRole(savedRole as UserRole);
+      if (savedRole === 'admin' && savedCurrentAdminUser) {
+        const adminExists = (cloudAdmins || []).some(
+          (a) => a.username.toLowerCase() === savedCurrentAdminUser.toLowerCase()
+        );
+        if (adminExists && savedIsLoggedIn === 'true') {
+          setIsLoggedIn(true);
+          setCurrentRoleState('admin');
+          setCurrentUserRole('admin');
+          setCurrentAdminUser(savedCurrentAdminUser);
+        } else {
+          setIsLoggedIn(false);
+          setCurrentRoleState('admin');
+          setCurrentUserRole(null);
+          setCurrentAdminUser(null);
+          AsyncStorage.removeItem(STORAGE_KEYS.IS_LOGGED_IN).catch(console.warn);
+          AsyncStorage.removeItem(STORAGE_KEYS.CURRENT_ADMIN_USER).catch(console.warn);
+        }
+      } else if (savedRole === 'customer' && savedCurrentUserId) {
+        const custExists = (cloudCustomers || []).some((c) => c.id === savedCurrentUserId);
+        if (custExists && savedIsLoggedIn === 'true') {
+          setIsLoggedIn(true);
+          setCurrentRoleState('customer');
+          setCurrentUserRole('customer');
+          setCurrentUserId(savedCurrentUserId);
+          setSelectedCustomerIdState(savedCurrentUserId);
+        } else {
+          setIsLoggedIn(false);
+          setCurrentRoleState('customer');
+          setCurrentUserRole(null);
+          setCurrentUserId(null);
+          setSelectedCustomerIdState('');
+          AsyncStorage.removeItem(STORAGE_KEYS.IS_LOGGED_IN).catch(console.warn);
+          AsyncStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID).catch(console.warn);
+          AsyncStorage.removeItem(STORAGE_KEYS.SELECTED_CUST).catch(console.warn);
+        }
+      } else {
+        if (savedIsLoggedIn === 'true') setIsLoggedIn(true);
+        if (savedRole) {
+          setCurrentRoleState(savedRole as UserRole);
+          setCurrentUserRole(savedRole as UserRole);
+        }
+        if (savedSelectedCust) setSelectedCustomerIdState(savedSelectedCust);
       }
-      if (savedSelectedCust) setSelectedCustomerIdState(savedSelectedCust);
-      if (savedIsLoggedIn === 'true') setIsLoggedIn(true);
-      if (savedCurrentUserId) setCurrentUserId(savedCurrentUserId);
-      if (savedCurrentAdminUser) setCurrentAdminUser(savedCurrentAdminUser);
     } catch (error) {
       console.error('Error loading data in ChitDataContext:', error);
       // Ensure at least INITIAL_SCHEMES are present in memory
@@ -284,6 +319,21 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (cloudSchemes && cloudSchemes.length > 0) setSchemes(cloudSchemes);
       if (cloudPayments && cloudPayments.length >= 0) setPayments(cloudPayments);
       if (cloudReceipts && cloudReceipts.length >= 0) setReceipts(cloudReceipts);
+
+      // Session validity verification
+      if (currentUserRole === 'admin' && currentAdminUser) {
+        const adminExists = (cloudAdmins || []).some(
+          (a) => a.username.toLowerCase() === currentAdminUser.toLowerCase()
+        );
+        if (!adminExists) {
+          logout();
+        }
+      } else if (currentUserRole === 'customer' && currentUserId) {
+        const custExists = (cloudCustomers || []).some((c) => c.id === currentUserId);
+        if (!custExists) {
+          logout();
+        }
+      }
     } catch (err) {
       console.warn('refreshFromCloud failed:', err);
     }
