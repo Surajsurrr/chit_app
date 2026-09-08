@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   Text,
   View,
   ScrollView,
   TouchableOpacity,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useChitData } from '../../context/ChitDataContext';
@@ -31,8 +32,22 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   if (!customer) {
     return (
       <SafeAreaView style={styles.errorContainer} edges={['top', 'bottom']}>
-        <Text style={styles.errorText}>Customer account not selected.</Text>
-        <Button title="Log Out" onPress={() => logout()} />
+        <View style={styles.completedNoticeBox}>
+          <Text style={styles.completedNoticeIcon}>🎉</Text>
+          <Text style={styles.completedNoticeTitle}>All Installment Payments Completed!</Text>
+          <Text style={styles.completedNoticeDesc}>
+            All installment payments for your chit scheme have been completed and your profile has been successfully closed.
+          </Text>
+          <Text style={styles.completedNoticeSub}>
+            Thank you for being a valued member!
+          </Text>
+          <Button
+            title="Log Out"
+            onPress={() => logout()}
+            variant="primary"
+            style={{ marginTop: SPACING.lg, minWidth: 160 }}
+          />
+        </View>
       </SafeAreaView>
     );
   }
@@ -53,6 +68,7 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const isOverdue = statusInfo.isOverdue && stats.remainingAmount > 0;
   const isDueToday = statusInfo.status === 'DUE_TODAY' && stats.remainingAmount > 0;
   const isSettled = stats.remainingAmount === 0 && totalValue > 0;
+  const [showCompletionModal, setShowCompletionModal] = useState(isSettled);
   const enrolledSchemes = Array.isArray(customer.enrolledSchemes) ? customer.enrolledSchemes : [];
   const hasMultipleSchemes = enrolledSchemes.length > 1;
 
@@ -375,6 +391,40 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           )}
         </Card>
       </ScrollView>
+
+      {/* All Installments Completed Modal for Customer */}
+      <Modal
+        visible={showCompletionModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setShowCompletionModal(false);
+          logout();
+        }}
+      >
+        <View style={styles.completedModalOverlay}>
+          <View style={styles.completedModalBox}>
+            <Text style={styles.completedModalIcon}>🎉</Text>
+            <Text style={styles.completedModalTitle}>All Installment Payments Completed!</Text>
+            <Text style={styles.completedModalDesc}>
+              All installment payments for your chit scheme have been completed and your account has been successfully closed.
+            </Text>
+            <Text style={styles.completedModalSub}>
+              Thank you for being a valued member! Your profile will now be logged out.
+            </Text>
+            <TouchableOpacity
+              style={styles.completedModalBtn}
+              onPress={() => {
+                setShowCompletionModal(false);
+                logout();
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.completedModalBtnText}>Log Out</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -959,6 +1009,94 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.bodyLarge,
     color: COLORS.danger,
     marginBottom: SPACING.lg,
+  },
+  completedNoticeBox: {
+    backgroundColor: COLORS.white,
+    padding: SPACING.xl,
+    borderRadius: 16,
+    alignItems: 'center',
+    maxWidth: 400,
+    width: '90%',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  completedNoticeIcon: {
+    fontSize: 48,
+    marginBottom: SPACING.md,
+  },
+  completedNoticeTitle: {
+    ...TYPOGRAPHY.h2,
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: SPACING.sm,
+  },
+  completedNoticeDesc: {
+    ...TYPOGRAPHY.bodyMedium,
+    color: COLORS.text,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: SPACING.xs,
+  },
+  completedNoticeSub: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+  },
+  completedModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.lg,
+  },
+  completedModalBox: {
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    padding: SPACING.xl,
+    alignItems: 'center',
+    maxWidth: 420,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  completedModalIcon: {
+    fontSize: 52,
+    marginBottom: SPACING.md,
+  },
+  completedModalTitle: {
+    ...TYPOGRAPHY.h2,
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: SPACING.sm,
+  },
+  completedModalDesc: {
+    ...TYPOGRAPHY.bodyLarge,
+    color: COLORS.text,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: SPACING.sm,
+  },
+  completedModalSub: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.secondary,
+    textAlign: 'center',
+    marginBottom: SPACING.lg,
+  },
+  completedModalBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.sm + 4,
+    borderRadius: 10,
+    minWidth: 160,
+    alignItems: 'center',
+  },
+  completedModalBtnText: {
+    ...TYPOGRAPHY.bodyMediumBold,
+    color: COLORS.white,
   },
 });
 

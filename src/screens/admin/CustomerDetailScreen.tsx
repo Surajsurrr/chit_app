@@ -386,16 +386,41 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
     setIsCollecting(false);
 
     if (result.success && result.receipt) {
-      selectCustomer(customer.id);
+      if (result.hasRemainingSchemes) {
+        selectCustomer(customer.id);
+      }
       setIsCollectModalVisible(false);
       setCollectAmount('');
       setCollectError('');
-      Alert.alert(
-        'Collection Recorded! ✓',
-        `Payment of ₹${amount.toLocaleString('en-IN')} recorded for ${customer.name}${
-          selectedSchemeForCollect ? ` (${selectedSchemeForCollect.loanName || 'Scheme'})` : ''
-        }.\n\nReceipt #${result.receipt.receiptNumber} generated.`
-      );
+
+      if (result.schemeCompleted) {
+        if (result.hasRemainingSchemes) {
+          Alert.alert(
+            'Scheme Completed! 🎉',
+            `Payment of ₹${amount.toLocaleString('en-IN')} recorded (Receipt #${result.receipt.receiptNumber}).\n\n${result.completedSchemeName || 'Scheme'} has completed all installments and has been closed!\n\n${customer.name} still has ${result.remainingSchemesCount} active scheme(s).`
+          );
+        } else {
+          Alert.alert(
+            'All Installments Completed! 🎉',
+            `Payment of ₹${amount.toLocaleString('en-IN')} recorded (Receipt #${result.receipt.receiptNumber}).\n\nAll installment payments for ${customer.name} have been completed! The scheme details and customer profile have been closed.`,
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  navigation.goBack();
+                },
+              },
+            ]
+          );
+        }
+      } else {
+        Alert.alert(
+          'Collection Recorded! ✓',
+          `Payment of ₹${amount.toLocaleString('en-IN')} recorded for ${customer.name}${
+            selectedSchemeForCollect ? ` (${selectedSchemeForCollect.loanName || 'Scheme'})` : ''
+          }.\n\nReceipt #${result.receipt.receiptNumber} generated.`
+        );
+      }
     } else {
       setCollectError(result.error || 'Failed to record collection');
     }

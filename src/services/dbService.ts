@@ -408,6 +408,22 @@ export const dbService = {
           .maybeSingle();
 
         if (error || !data) {
+          // Check if customer previously completed all installments and was closed
+          try {
+            const { data: pastPay } = await supabase
+              .from('payments')
+              .select('id')
+              .or(`customer_id.ilike.${cleanId}`)
+              .limit(1);
+            if (pastPay && pastPay.length > 0) {
+              return {
+                success: false,
+                error: 'All installment payments have been completed for this customer and the profile has been closed. Thank you!',
+              };
+            }
+          } catch {
+            // Ignore check error
+          }
           return { success: false, error: 'Customer ID or Phone number not found in database' };
         }
 
@@ -428,12 +444,39 @@ export const dbService = {
         c.id.toLowerCase() === cleanId.toLowerCase()
     );
     if (!found) {
+      const pastPayments = await this.fetchPayments();
+      const hasPastPay = pastPayments.some((p) => p.customerId.toLowerCase() === cleanId.toLowerCase());
+      if (hasPastPay) {
+        return {
+          success: false,
+          error: 'All installment payments have been completed for this customer and the profile has been closed. Thank you!',
+        };
+      }
       return { success: false, error: 'Customer ID or Phone number not found' };
     }
     if (found.pin !== pin.trim()) {
       return { success: false, error: 'Incorrect 4-digit PIN' };
     }
     return { success: true, customer: found };
+  },
+
+  async deleteCustomer(customerId: string): Promise<{ success: boolean; error?: string }> {
+    if (this.isLive()) {
+      try {
+        const { error } = await supabase.from('customers').delete().eq('id', customerId);
+        if (error) throw error;
+        await this.fetchCustomers();
+        return { success: true };
+      } catch (err: any) {
+        console.error('Supabase deleteCustomer error:', err);
+        return { success: false, error: err?.message || 'Failed to delete customer' };
+      }
+    }
+
+    const customers = await this.fetchCustomers();
+    const updated = customers.filter((c) => c.id !== customerId);
+    await AsyncStorage.setItem(CACHE_KEYS.CUSTOMERS, JSON.stringify(updated));
+    return { success: true };
   },
 
   async updateCustomer(customerId: string, updatedData: Partial<Customer>): Promise<{ success: boolean; error?: string }> {

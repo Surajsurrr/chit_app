@@ -141,7 +141,17 @@ export interface ChitDataContextType {
     amount: number,
     method: 'UPI' | 'Cash' | 'Card' | 'Bank Transfer',
     schemeNameOrId?: string
-  ) => { success: boolean; error?: string; receipt?: Receipt };
+  ) => {
+    success: boolean;
+    error?: string;
+    receipt?: Receipt;
+    schemeCompleted?: boolean;
+    completedSchemeName?: string;
+    hasRemainingSchemes?: boolean;
+    remainingSchemesCount?: number;
+    message?: string;
+  };
+  deleteCustomer: (customerId: string) => Promise<{ success: boolean; error?: string }>;
   getSchemeStats: (
     customerId: string,
     schemeIdOrName?: string
@@ -824,7 +834,16 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     amount: number,
     method: 'UPI' | 'Cash' | 'Card' | 'Bank Transfer',
     schemeNameOrId?: string
-  ): { success: boolean; error?: string; receipt?: Receipt } => {
+  ): {
+    success: boolean;
+    error?: string;
+    receipt?: Receipt;
+    schemeCompleted?: boolean;
+    completedSchemeName?: string;
+    hasRemainingSchemes?: boolean;
+    remainingSchemesCount?: number;
+    message?: string;
+  } => {
     const customer = customers.find((c) => c.id === customerId);
     if (!customer) {
       return { success: false, error: 'Customer not found' };
@@ -908,7 +927,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       referenceId: `REF${Date.now().toString().slice(-9)}`,
     };
 
-    // 3. Update customer details (next payment date)
+    // 3. Check scheme completion and handle single vs multi-scheme rules
     const currentNextDate = new Date(customer.nextPaymentDate);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -923,54 +942,169 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const installmentAmount = matchedLoan?.collectionAmount || customer.collectionAmount || amount;
     const frequency = matchedLoan?.frequency || customer.frequency || 'daily';
     const cycles = Math.max(1, Math.floor(amount / (installmentAmount > 0 ? installmentAmount : 1)));
-
     const nextPayDate = calculateNextPaymentDate(baseDate, frequency, cycles);
 
-    // If customer has enrolled schemes, update the specific scheme's nextPaymentDate
-    let updatedEnrolledSchemes = customer.enrolledSchemes;
-    if (Array.isArray(customer.enrolledSchemes) && matchedLoan) {
-      updatedEnrolledSchemes = customer.enrolledSchemes.map((s: any) => {
-        if (s.id === matchedLoan.id) {
+    const isSchemeCompleted = newRemainingBalance <= 0;
+
+    // Determine current active schemes list
+    const currentSchemes: any[] = enrolledList.length > 0 ? enrolledList : [
+      {
+        id: 'LOAN-1',
+        loanName: schemeName || 'Scheme #1',
+        payoutAmount: customer.payoutAmount || 0,
+        interestAmount: customer.interestAmount || 0,
+        totalAmount: customer.totalAmount || customer.amountGiven || 0,
+        collectionAmount: customer.collectionAmount || 0,
+        durationInstallments: customer.durationInstallments || 50,
+        frequency: customer.frequency || 'daily',
+        startDate: customer.startDate || new Date().toISOString(),
+        nextPaymentDate: customer.nextPaymentDate || new Date().toISOString(),
+      },
+    ];
+
+    let hasRemainingSchemes = false;
+    let remainingSchemesCount = 0;
+    let updatedCustomers = customers;
+
+    if (isSchemeCompleted) {
+      if (currentSchemes.length > 1) {
+        // MULTI-SCHEME CUSTOMER: Delete only the completed scheme, retain other schemes and customer in DB
+        const remainingSchemes = currentSchemes.filter(
+          (s: any) =>
+            s.id !== (matchedLoan?.id || '') &&
+            s.loanName !== (matchedLoan?.loanName || '') &&
+            s.loanName !== schemeName
+        );
+
+        hasRemainingSchemes = remainingSchemes.length > 0;
+        remainingSchemesCount = remainingSchemes.length;
+
+        if (hasRemainingSchemes) {
+          const sumPayout = remainingSchemes.reduce((sum, s) => sum + (Number(s.payoutAmount) || 0), 0);
+          const sumInterest = remainingSchemes.reduce((sum, s) => sum + (Number(s.interestAmount) || 0), 0);
+          const sumTotal = remainingSchemes.reduce((sum, s) => sum + (Number(s.totalAmount) || Number(s.amountGiven) || 0), 0);
+          const sumCollection = remainingSchemes.reduce((sum, s) => sum + (Number(s.collectionAmount) || 0), 0);
+          const lastFreq = remainingSchemes[remainingSchemes.length - 1].frequency || customer.frequency || 'daily';
+          const nextActivePayDate = remainingSchemes[0].nextPaymentDate || nextPayDate;
+
+          const customerUpdates: Partial<Customer> = {
+            payoutAmount: sumPayout,
+            interestAmount: sumInterest,
+            interestRate: sumPayout > 0 ? (sumInterest / sumPayout) * 100 : 0,
+            totalAmount: sumTotal,
+            amountGiven: sumTotal,
+            collectionAmount: sumCollection,
+            frequency: lastFreq,
+            nextPaymentDate: nextActivePayDate,
+            enrolledSchemes: remainingSchemes,
+          };
+
+          updatedCustomers = customers.map((c) =>
+            c.id === customerId ? { ...c, ...customerUpdates } : c
+          );
+          setCustomers(updatedCustomers);
+
+          dbService.updateCustomer(customerId, customerUpdates).catch((err) =>
+            console.error('dbService.updateCustomer error on completed scheme:', err)
+          );
+        } else {
+          // Last scheme completed on multi-scheme customer
+          updatedCustomers = customers.filter((c) => c.id !== customerId);
+          setCustomers(updatedCustomers);
+          dbService.deleteCustomer(customerId).catch((err) =>
+            console.error('dbService.deleteCustomer error:', err)
+          );
+        }
+      } else {
+        // SINGLE SCHEME CUSTOMER: Scheme and customer details deleted completely from DB and state
+        hasRemainingSchemes = false;
+        remainingSchemesCount = 0;
+        updatedCustomers = customers.filter((c) => c.id !== customerId);
+        setCustomers(updatedCustomers);
+        dbService.deleteCustomer(customerId).catch((err) =>
+          console.error('dbService.deleteCustomer error:', err)
+        );
+      }
+
+      // If customer profile is currently open or logged in and all schemes completed, log them out
+      if (!hasRemainingSchemes && (currentUserId === customerId || selectedCustomerId === customerId)) {
+        setTimeout(() => {
+          logout();
+        }, 150);
+      }
+    } else {
+      // Normal installment: update next payment date
+      let updatedEnrolledSchemes = customer.enrolledSchemes;
+      if (Array.isArray(customer.enrolledSchemes) && matchedLoan) {
+        updatedEnrolledSchemes = customer.enrolledSchemes.map((s: any) => {
+          if (s.id === matchedLoan.id) {
+            return {
+              ...s,
+              nextPaymentDate: nextPayDate,
+            };
+          }
+          return s;
+        });
+      }
+
+      updatedCustomers = customers.map((c) => {
+        if (c.id === customerId) {
           return {
-            ...s,
+            ...c,
             nextPaymentDate: nextPayDate,
+            enrolledSchemes: updatedEnrolledSchemes,
           };
         }
-        return s;
+        return c;
       });
-    }
 
-    const updatedCustomers = customers.map((c) => {
-      if (c.id === customerId) {
-        return {
-          ...c,
-          nextPaymentDate: nextPayDate,
-          enrolledSchemes: updatedEnrolledSchemes,
-        };
-      }
-      return c;
-    });
+      setCustomers(updatedCustomers);
+
+      dbService.updateCustomer(customerId, {
+        nextPaymentDate: nextPayDate,
+        enrolledSchemes: updatedEnrolledSchemes,
+      }).catch((err) =>
+        console.error('dbService.updateCustomer nextPaymentDate error:', err)
+      );
+    }
 
     const updatedPayments = [newPayment, ...payments];
     const updatedReceipts = [newReceipt, ...receipts];
 
-    setCustomers(updatedCustomers);
     setPayments(updatedPayments);
     setReceipts(updatedReceipts);
-    setSelectedCustomerIdState(customerId);
+    if (hasRemainingSchemes || !isSchemeCompleted) {
+      setSelectedCustomerIdState(customerId);
+    } else {
+      setSelectedCustomerIdState('');
+    }
 
-    // Asynchronously synchronize with central database
+    // Asynchronously synchronize payment with central database
     dbService.recordPayment(newPayment, newReceipt).catch((err) =>
       console.error('dbService.recordPayment error:', err)
     );
-    dbService.updateCustomer(customerId, {
-      nextPaymentDate: nextPayDate,
-      enrolledSchemes: updatedEnrolledSchemes,
-    }).catch((err) =>
-      console.error('dbService.updateCustomer nextPaymentDate error:', err)
-    );
 
-    return { success: true, receipt: newReceipt };
+    return {
+      success: true,
+      receipt: newReceipt,
+      schemeCompleted: isSchemeCompleted,
+      completedSchemeName: schemeName,
+      hasRemainingSchemes,
+      remainingSchemesCount,
+      message: isSchemeCompleted
+        ? hasRemainingSchemes
+          ? `${schemeName} has completed all installments and has been closed! Customer has ${remainingSchemesCount} active scheme(s) remaining.`
+          : `All installment payment has been completed for ${customer.name}! Scheme details and customer profile have been closed.`
+        : undefined,
+    };
+  };
+
+  const deleteCustomer = async (customerId: string): Promise<{ success: boolean; error?: string }> => {
+    setCustomers((prev) => prev.filter((c) => c.id !== customerId));
+    if (selectedCustomerId === customerId) {
+      setSelectedCustomerIdState('');
+    }
+    return dbService.deleteCustomer(customerId);
   };
 
   // Centralized Authentication & Registration Methods
@@ -1257,6 +1391,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         updateCustomerProfile,
         updateAdminProfile,
         recordPayment,
+        deleteCustomer,
         resetData,
         refreshFromCloud,
         loginAsAdmin,

@@ -109,19 +109,35 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     const result = recordPayment(selectedCust.id, amount, paymentMethod, schemeNameOrId);
     if (result.success && result.receipt) {
       const customerName = selectedCust.name;
-      selectCustomer(selectedCust.id);
+      if (result.hasRemainingSchemes) {
+        selectCustomer(selectedCust.id);
+      }
       setIsCollectModalVisible(false);
       setSelectedCust(null);
       setSelectedScheme(null);
       setCollectAmount('');
       setCollectError('');
 
-      Alert.alert(
-        'Collection Recorded! ✓',
-        `Payment of ₹${amount.toLocaleString('en-IN')} has been recorded for ${customerName}${
-          selectedScheme ? ` (${selectedScheme.loanName || 'Scheme'})` : ''
-        }.\n\nReceipt #${result.receipt.receiptNumber} generated.`
-      );
+      if (result.schemeCompleted) {
+        if (result.hasRemainingSchemes) {
+          Alert.alert(
+            'Scheme Completed! 🎉',
+            `Payment of ₹${amount.toLocaleString('en-IN')} recorded (Receipt #${result.receipt.receiptNumber}).\n\n${result.completedSchemeName || 'Scheme'} has completed all installments and has been closed!\n\n${customerName} still has ${result.remainingSchemesCount} active scheme(s).`
+          );
+        } else {
+          Alert.alert(
+            'All Installments Completed! 🎉',
+            `Payment of ₹${amount.toLocaleString('en-IN')} recorded (Receipt #${result.receipt.receiptNumber}).\n\nAll installment payments for ${customerName} have been completed! The scheme details and customer profile have been closed.`
+          );
+        }
+      } else {
+        Alert.alert(
+          'Collection Recorded! ✓',
+          `Payment of ₹${amount.toLocaleString('en-IN')} has been recorded for ${customerName}${
+            selectedScheme ? ` (${selectedScheme.loanName || 'Scheme'})` : ''
+          }.\n\nReceipt #${result.receipt.receiptNumber} generated.`
+        );
+      }
     } else {
       setCollectError(result.error || 'Failed to record collection');
     }

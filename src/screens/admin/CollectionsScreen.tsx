@@ -119,17 +119,34 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
     const result = recordPayment(selectedCustId, amount, paymentMethod, selectedSchemeIdOrName || undefined);
     
     if (result.success && result.receipt) {
-      selectCustomer(selectedCustId);
+      const custName = targetCustomer?.name || 'Customer';
+      if (result.hasRemainingSchemes) {
+        selectCustomer(selectedCustId);
+      }
       setIsModalVisible(false);
       setPaymentAmount('');
       setSelectedCustId('');
       setSelectedSchemeIdOrName(null);
       setFormError('');
 
-      Alert.alert(
-        'Collection Recorded! ✓',
-        `Payment of ₹${amount.toLocaleString('en-IN')} has been recorded and overdue cleared${targetCustomer ? ` for ${targetCustomer.name}` : ''}.\n\nThe official invoice is available for the customer to view and print from the Receipts tab in their Customer Dashboard.`
-      );
+      if (result.schemeCompleted) {
+        if (result.hasRemainingSchemes) {
+          Alert.alert(
+            'Scheme Completed! 🎉',
+            `Payment of ₹${amount.toLocaleString('en-IN')} recorded (Receipt #${result.receipt.receiptNumber}).\n\n${result.completedSchemeName || 'Scheme'} has completed all installments and has been closed!\n\n${custName} still has ${result.remainingSchemesCount} active scheme(s).`
+          );
+        } else {
+          Alert.alert(
+            'All Installments Completed! 🎉',
+            `Payment of ₹${amount.toLocaleString('en-IN')} recorded (Receipt #${result.receipt.receiptNumber}).\n\nAll installment payments for ${custName} have been completed! The scheme details and customer profile have been closed.`
+          );
+        }
+      } else {
+        Alert.alert(
+          'Collection Recorded! ✓',
+          `Payment of ₹${amount.toLocaleString('en-IN')} has been recorded and overdue cleared for ${custName}.\n\nReceipt #${result.receipt.receiptNumber} generated.`
+        );
+      }
     } else {
       setFormError(result.error || 'Failed to record collection');
     }
