@@ -248,10 +248,44 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
 
       setSchemes(finalSchemes);
-      setAdmins(cloudAdmins || []);
-      setCustomers(cloudCustomers || []);
-      setPayments(cloudPayments || []);
-      setReceipts(cloudReceipts || []);
+      const validCustomers = (cloudCustomers || []).filter((c) => {
+        const totalVal = c.totalAmount || c.amountGiven || 0;
+        const schemes = Array.isArray(c.enrolledSchemes) ? c.enrolledSchemes : [];
+        if (totalVal === 0 && schemes.length === 0 && (!c.payoutAmount || c.payoutAmount === 0)) {
+          dbService.deleteCustomer(c.id).catch(console.warn);
+          return false;
+        }
+        return true;
+      });
+      setCustomers(validCustomers);
+
+      const customerMap = new Map((validCustomers || []).map((c) => [c.id.toLowerCase(), c]));
+      const validPayments = (cloudPayments || []).filter((p) => {
+        const cust = customerMap.get((p.customerId || '').toLowerCase());
+        if (!cust) return false;
+        if (cust.startDate) {
+          const custStartTime = new Date(cust.startDate).getTime();
+          const payTime = new Date(p.date).getTime();
+          if (!isNaN(custStartTime) && !isNaN(payTime) && payTime < custStartTime - 600000) {
+            return false;
+          }
+        }
+        return true;
+      });
+      const validReceipts = (cloudReceipts || []).filter((r) => {
+        const cust = customerMap.get((r.customerId || '').toLowerCase());
+        if (!cust) return false;
+        if (cust.startDate) {
+          const custStartTime = new Date(cust.startDate).getTime();
+          const recTime = new Date(r.date).getTime();
+          if (!isNaN(custStartTime) && !isNaN(recTime) && recTime < custStartTime - 600000) {
+            return false;
+          }
+        }
+        return true;
+      });
+      setPayments(validPayments);
+      setReceipts(validReceipts);
 
       // Restore session preferences with database presence verification
       const savedRole = await AsyncStorage.getItem(STORAGE_KEYS.ROLE);
@@ -329,10 +363,53 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       ]);
 
       if (cloudAdmins && cloudAdmins.length >= 0) setAdmins(cloudAdmins);
-      if (cloudCustomers && cloudCustomers.length >= 0) setCustomers(cloudCustomers);
+      let currentValidCusts: Customer[] = customers;
+      if (cloudCustomers && cloudCustomers.length >= 0) {
+        const validCustomers = cloudCustomers.filter((c) => {
+          const totalVal = c.totalAmount || c.amountGiven || 0;
+          const schemes = Array.isArray(c.enrolledSchemes) ? c.enrolledSchemes : [];
+          if (totalVal === 0 && schemes.length === 0 && (!c.payoutAmount || c.payoutAmount === 0)) {
+            dbService.deleteCustomer(c.id).catch(console.warn);
+            return false;
+          }
+          return true;
+        });
+        currentValidCusts = validCustomers;
+        setCustomers(validCustomers);
+      }
       if (cloudSchemes && cloudSchemes.length > 0) setSchemes(cloudSchemes);
-      if (cloudPayments && cloudPayments.length >= 0) setPayments(cloudPayments);
-      if (cloudReceipts && cloudReceipts.length >= 0) setReceipts(cloudReceipts);
+
+      const customerMap = new Map((currentValidCusts || []).map((c) => [c.id.toLowerCase(), c]));
+      if (cloudPayments && cloudPayments.length >= 0) {
+        const validPayments = cloudPayments.filter((p) => {
+          const cust = customerMap.get((p.customerId || '').toLowerCase());
+          if (!cust) return false;
+          if (cust.startDate) {
+            const custStartTime = new Date(cust.startDate).getTime();
+            const payTime = new Date(p.date).getTime();
+            if (!isNaN(custStartTime) && !isNaN(payTime) && payTime < custStartTime - 600000) {
+              return false;
+            }
+          }
+          return true;
+        });
+        setPayments(validPayments);
+      }
+      if (cloudReceipts && cloudReceipts.length >= 0) {
+        const validReceipts = cloudReceipts.filter((r) => {
+          const cust = customerMap.get((r.customerId || '').toLowerCase());
+          if (!cust) return false;
+          if (cust.startDate) {
+            const custStartTime = new Date(cust.startDate).getTime();
+            const recTime = new Date(r.date).getTime();
+            if (!isNaN(custStartTime) && !isNaN(recTime) && recTime < custStartTime - 600000) {
+              return false;
+            }
+          }
+          return true;
+        });
+        setReceipts(validReceipts);
+      }
 
       // Session validity verification (only evaluate if non-empty cloud list returned)
       if (currentUserRole === 'admin' && currentAdminUser && cloudAdmins && cloudAdmins.length > 0) {
@@ -397,6 +474,20 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     let maxNum = 100;
     customers.forEach((c) => {
       const match = c.id.match(/^CUST-(\d+)$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+    payments.forEach((p) => {
+      const match = (p.customerId || '').match(/^CUST-(\d+)$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+    receipts.forEach((r) => {
+      const match = (r.customerId || '').match(/^CUST-(\d+)$/i);
       if (match) {
         const num = parseInt(match[1], 10);
         if (num > maxNum) maxNum = num;
@@ -857,40 +948,29 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       );
     });
 
-    const hasSettled = Array.isArray(customer.settledSchemes) && customer.settledSchemes.length > 0;
-
     // If this was the only active scheme (or 0 remaining)
     if (remainingSchemes.length === 0 || enrolledList.length <= 1) {
-      if (!hasSettled) {
-        // No settled schemes history: delete the entire customer profile
-        setCustomers((prev) => prev.filter((c) => c.id !== customerId));
-        if (selectedCustomerId === customerId) {
-          setSelectedCustomerIdState('');
-          AsyncStorage.removeItem(STORAGE_KEYS.SELECTED_CUST).catch(console.warn);
-        }
-        const res = await dbService.deleteCustomer(customerId);
-        return { success: res.success, customerDeleted: true, error: res.error };
-      } else {
-        // Customer has past settled schemes: preserve customer record with empty active schemes
-        const customerUpdates: Partial<Customer> = {
-          collectionAmount: 0,
-          totalAmount: 0,
-          amountGiven: 0,
-          payoutAmount: 0,
-          interestAmount: 0,
-          schemeId: '',
-          enrolledSchemes: [],
-          enrolledSchemeIds: [],
-        };
-        setCustomers((prev) =>
-          prev.map((c) => (c.id === customerId ? { ...c, ...customerUpdates } : c))
-        );
-        const res = await dbService.updateCustomer(customerId, customerUpdates);
-        return { success: res.success, customerDeleted: false, error: res.error };
+      setCustomers((prev) => prev.filter((c) => c.id !== customerId));
+      setPayments((prev) => prev.filter((p) => p.customerId !== customerId));
+      setReceipts((prev) => prev.filter((r) => r.customerId !== customerId));
+      if (selectedCustomerId === customerId) {
+        setSelectedCustomerIdState('');
+        AsyncStorage.removeItem(STORAGE_KEYS.SELECTED_CUST).catch(console.warn);
       }
+      const res = await dbService.deleteCustomer(customerId);
+      return { success: res.success, customerDeleted: true, error: res.error };
     }
 
     // Customer has remaining schemes: recalculate aggregate terms
+    // Remove payments that belonged specifically to this deleted scheme
+    setPayments((prev) =>
+      prev.filter(
+        (p) =>
+          p.customerId !== customerId ||
+          (((p as any).loanId || '').toLowerCase() !== cleanIdent &&
+            (p.schemeName || '').toLowerCase() !== cleanIdent)
+      )
+    );
     const sumPayout = remainingSchemes.reduce((sum, s) => sum + (Number(s.payoutAmount) || 0), 0);
     const sumInterest = remainingSchemes.reduce((sum, s) => sum + (Number(s.interestAmount) || 0), 0);
     const sumTotal = remainingSchemes.reduce((sum, s) => sum + (Number(s.totalAmount) || Number(s.amountGiven) || 0), 0);
@@ -1042,36 +1122,27 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     const schemesList: any[] = Array.isArray(customer.enrolledSchemes) ? customer.enrolledSchemes : [];
-    const settledList: any[] = Array.isArray(customer.settledSchemes) ? customer.settledSchemes : [];
-
-    // Check if queried scheme is in settled schemes
-    if (schemeIdOrName) {
-      const cleanQ = schemeIdOrName.trim().toLowerCase();
-      const matchedSettled = settledList.find((s) => {
-        const sId = (s.id || '').toLowerCase();
-        const sLoanName = (s.loanName || '').toLowerCase();
-        const sSchemeName = (s.schemeName || '').toLowerCase();
-        const sSchemeId = (s.schemeId || '').toLowerCase();
-        return sId === cleanQ || sLoanName === cleanQ || sSchemeName === cleanQ || sSchemeId === cleanQ;
-      });
-      if (matchedSettled) {
-        const sTotal = Number(matchedSettled.totalAmount || 0);
-        return {
-          paidAmount: sTotal,
-          remainingAmount: 0,
-          totalAmount: sTotal,
-          progressPercentage: 100,
-        };
-      }
-    }
 
     if (schemesList.length === 0 || !schemeIdOrName) {
-      const overallStats = getCustomerStats(customerId);
+      const totalDue = customer.totalAmount || customer.amountGiven || 0;
+      const custPayments = payments.filter((p) => {
+        if (p.customerId !== customerId) return false;
+        if (customer.startDate) {
+          const custStartTime = new Date(customer.startDate).getTime();
+          const payTime = new Date(p.date).getTime();
+          if (!isNaN(custStartTime) && !isNaN(payTime) && payTime < custStartTime - 600000) {
+            return false;
+          }
+        }
+        return true;
+      });
+      const paid = custPayments.reduce((sum, p) => sum + p.amount, 0);
+      const rem = Math.max(0, totalDue - paid);
       return {
-        paidAmount: overallStats.paidAmount,
-        remainingAmount: overallStats.remainingAmount,
-        totalAmount: overallStats.totalAmount,
-        progressPercentage: overallStats.progressPercentage,
+        paidAmount: paid,
+        remainingAmount: rem,
+        totalAmount: totalDue,
+        progressPercentage: totalDue > 0 ? (paid / totalDue) * 100 : 0,
       };
     }
 
@@ -1110,7 +1181,17 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (s.schemeName) otherIdentifiers.push(s.schemeName.toLowerCase());
     });
 
-    const allCustomerPayments = payments.filter((p) => p.customerId === customerId);
+    const allCustomerPayments = payments.filter((p) => {
+      if (p.customerId !== customerId) return false;
+      if (customer.startDate) {
+        const custStartTime = new Date(customer.startDate).getTime();
+        const payTime = new Date(p.date).getTime();
+        if (!isNaN(custStartTime) && !isNaN(payTime) && payTime < custStartTime - 600000) {
+          return false;
+        }
+      }
+      return true;
+    });
 
     let effectivePayments: Payment[] = [];
 
@@ -1299,46 +1380,6 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     let updatedCustomers = customers;
 
     if (isSchemeCompleted) {
-      // Create completed scheme record to store in settled column
-      const completedSchemeTotal = Number(
-        matchedLoan?.totalAmount ||
-        (Number(matchedLoan?.payoutAmount || 0) + Number(matchedLoan?.interestAmount || 0)) ||
-        customer.totalAmount ||
-        customer.amountGiven ||
-        amount
-      );
-      const completedSchemePayout = Number(
-        matchedLoan?.payoutAmount ??
-        Math.max(0, completedSchemeTotal - (Number(matchedLoan?.interestAmount || customer.interestAmount || 0)))
-      );
-      const completedSchemeInterest = Number(
-        matchedLoan?.interestAmount ??
-        Math.max(0, completedSchemeTotal - completedSchemePayout)
-      );
-
-      const completedSchemeRecord = {
-        id: matchedLoan?.id || 'LOAN-1',
-        schemeId: matchedLoan?.schemeId || matchedLoan?.id || customer.schemeId || 'scheme-1',
-        schemeName,
-        loanName: schemeName,
-        totalAmount: completedSchemeTotal,
-        payoutAmount: completedSchemePayout,
-        interestAmount: completedSchemeInterest,
-        interestRate: matchedLoan?.interestRate ?? (completedSchemePayout > 0 ? (completedSchemeInterest / completedSchemePayout) * 100 : customer.interestRate || 0),
-        collectionAmount: Number(matchedLoan?.collectionAmount || customer.collectionAmount || 0),
-        durationInstallments: Number(matchedLoan?.durationInstallments || customer.durationInstallments || 50),
-        frequency: matchedLoan?.frequency || customer.frequency || 'daily',
-        startDate: matchedLoan?.startDate || customer.startDate || new Date().toISOString(),
-        settledAt: timestamp.toISOString(),
-        status: 'settled',
-        totalPaid: (targetStats?.paidAmount || 0) + amount,
-      };
-
-      const updatedSettledSchemes = [
-        ...(Array.isArray(customer.settledSchemes) ? customer.settledSchemes : []),
-        completedSchemeRecord,
-      ];
-
       // Remove the completed scheme from active enrolled schemes
       const remainingSchemes = currentSchemes.filter(
         (s: any) =>
@@ -1352,7 +1393,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       remainingSchemesCount = remainingSchemes.length;
 
       if (hasRemainingSchemes) {
-        // MULTI-SCHEME CUSTOMER: Scheme stored in settled column, other schemes remain active
+        // MULTI-SCHEME CUSTOMER: Scheme completed and removed, other schemes remain active
         const sumPayout = remainingSchemes.reduce((sum, s) => sum + (Number(s.payoutAmount) || 0), 0);
         const sumInterest = remainingSchemes.reduce((sum, s) => sum + (Number(s.interestAmount) || 0), 0);
         const sumTotal = remainingSchemes.reduce((sum, s) => sum + (Number(s.totalAmount) || Number(s.amountGiven) || 0), 0);
@@ -1375,7 +1416,6 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           schemeId: remainingSchemes[0]?.schemeId || remainingSchemes[0]?.id || '',
           enrolledSchemes: remainingSchemes,
           enrolledSchemeIds: remainingIds,
-          settledSchemes: updatedSettledSchemes,
         };
 
         updatedCustomers = customers.map((c) =>
@@ -1387,31 +1427,27 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           console.error('dbService.updateCustomer error on completed scheme:', err)
         );
       } else {
-        // ALL SCHEMES SETTLED: Scheme stored in "settled" column.
-        // The scheme is removed from customer side, but customer profile is preserved in settled status!
-        const customerUpdates: Partial<Customer> = {
-          collectionAmount: 0,
-          totalAmount: 0,
-          amountGiven: 0,
-          payoutAmount: 0,
-          interestAmount: 0,
-          schemeId: '',
-          enrolledSchemes: [],
-          enrolledSchemeIds: [],
-          settledSchemes: updatedSettledSchemes,
-        };
+        // ALL SCHEMES / ONLY SCHEME COMPLETED:
+        // Customer profile and scheme details are removed completely from DB and state
+        hasRemainingSchemes = false;
+        remainingSchemesCount = 0;
 
-        updatedCustomers = customers.map((c) =>
-          c.id === customerId ? { ...c, ...customerUpdates } : c
-        );
+        updatedCustomers = customers.filter((c) => c.id !== customerId);
         setCustomers(updatedCustomers);
+        setPayments((prev) => prev.filter((p) => p.customerId !== customerId));
+        setReceipts((prev) => prev.filter((r) => r.customerId !== customerId));
 
-        dbService.updateCustomer(customerId, customerUpdates).catch((err) =>
-          console.error('dbService.updateCustomer error on settling customer scheme:', err)
+        if (selectedCustomerId === customerId) {
+          setSelectedCustomerIdState('');
+          AsyncStorage.removeItem(STORAGE_KEYS.SELECTED_CUST).catch(console.warn);
+        }
+
+        dbService.deleteCustomer(customerId).catch((err) =>
+          console.error('dbService.deleteCustomer error on full completion:', err)
         );
       }
 
-      // Do not automatically call logout() when a scheme completes so the admin is never kicked out of their dashboard.
+      // Note: Admin is never logged out!
     } else {
       // Normal installment: update next payment date
       let updatedEnrolledSchemes = customer.enrolledSchemes;
@@ -1453,7 +1489,13 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     setPayments(updatedPayments);
     setReceipts(updatedReceipts);
-    setSelectedCustomerIdState(customerId);
+
+    if (hasRemainingSchemes || !isSchemeCompleted) {
+      setSelectedCustomerIdState(customerId);
+    } else {
+      setSelectedCustomerIdState('');
+      AsyncStorage.removeItem(STORAGE_KEYS.SELECTED_CUST).catch(console.warn);
+    }
 
     // Asynchronously synchronize payment with central database
     dbService.recordPayment(newPayment, newReceipt).catch((err) =>
@@ -1469,14 +1511,16 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       remainingSchemesCount,
       message: isSchemeCompleted
         ? hasRemainingSchemes
-          ? `${schemeName} has completed all installments and has been stored in Settled schemes! Customer has ${remainingSchemesCount} active scheme(s) remaining.`
-          : `All installment payments have been completed for ${customer.name}! ${schemeName} is now stored in Settled schemes.`
+          ? `${schemeName} has completed all installments and has been closed! Customer has ${remainingSchemesCount} active scheme(s) remaining.`
+          : `All installment payments have been completed for ${customer.name}! Scheme details and customer profile have been closed.`
         : undefined,
     };
   };
 
   const deleteCustomer = async (customerId: string): Promise<{ success: boolean; error?: string }> => {
     setCustomers((prev) => prev.filter((c) => c.id !== customerId));
+    setPayments((prev) => prev.filter((p) => p.customerId !== customerId));
+    setReceipts((prev) => prev.filter((r) => r.customerId !== customerId));
     if (selectedCustomerId === customerId) {
       setSelectedCustomerIdState('');
     }
@@ -1700,38 +1744,20 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       };
     }
 
-    const settledList = customer.settledSchemes || [];
-    const enrolledList = customer.enrolledSchemes || [];
+    const enrolledList = Array.isArray(customer.enrolledSchemes) ? customer.enrolledSchemes : [];
 
-    // Case 1: Customer has only settled schemes (all active schemes paid off)
-    if (enrolledList.length === 0 && settledList.length > 0) {
-      const settledTotal = settledList.reduce((sum: number, s: any) => sum + (s.totalAmount || s.amountGiven || 0), 0);
-      const settledPayout = settledList.reduce((sum: number, s: any) => sum + (s.payoutAmount || 0), 0);
-      const settledInterest = settledList.reduce((sum: number, s: any) => sum + (s.interestAmount || 0), 0);
-      const customerPayments = payments.filter((p) => p.customerId === customerId);
-      const paidAmount = customerPayments.reduce((sum, p) => sum + p.amount, 0);
-
-      return {
-        paidAmount,
-        remainingAmount: 0,
-        totalPayments: customerPayments.length,
-        progressPercentage: 100,
-        payoutAmount: settledPayout,
-        interestAmount: settledInterest,
-        totalAmount: settledTotal,
-      };
-    }
-
-    // Case 2: Customer has active enrolled schemes (may also have settled schemes in history)
-    if (enrolledList.length > 0) {
+    // Case 1: Multiple enrolled schemes (aggregate across schemes)
+    if (enrolledList.length > 1) {
       let activeRemaining = 0;
       let activeTotal = 0;
       let activePayout = 0;
       let activeInterest = 0;
       let activePaid = 0;
 
-      for (const scheme of enrolledList) {
-        const stats = getSchemeStats(customerId, scheme.schemeId || scheme.id);
+      for (let idx = 0; idx < enrolledList.length; idx++) {
+        const scheme = enrolledList[idx];
+        const identifier = scheme.id || scheme.schemeId || scheme.loanName || `Scheme #${idx + 1}`;
+        const stats = getSchemeStats(customerId, identifier);
         const sPayout = Number((scheme as any).payoutAmount || 0);
         const sInterest = Number((scheme as any).interestAmount || 0);
         activeRemaining += stats.remainingAmount;
@@ -1755,12 +1781,22 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       };
     }
 
-    // Case 3: Flat single customer scheme
+    // Case 2: Flat / single customer scheme
     const totalDue = customer.totalAmount || customer.amountGiven || 0;
     const payout = customer.payoutAmount ?? (totalDue - (customer.interestAmount || 0));
     const interest = customer.interestAmount ?? (totalDue - payout);
 
-    const customerPayments = payments.filter((p) => p.customerId === customerId);
+    const customerPayments = payments.filter((p) => {
+      if (p.customerId !== customerId) return false;
+      if (customer.startDate) {
+        const custStartTime = new Date(customer.startDate).getTime();
+        const payTime = new Date(p.date).getTime();
+        if (!isNaN(custStartTime) && !isNaN(payTime) && payTime < custStartTime - 600000) {
+          return false;
+        }
+      }
+      return true;
+    });
     const paidAmount = customerPayments.reduce((sum, p) => sum + p.amount, 0);
     const remainingAmount = Math.max(0, totalDue - paidAmount);
     const totalPayments = customerPayments.length;
@@ -1779,11 +1815,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const getAdminStats = (): AdminStats => {
     const totalCustomers = customers.length;
-    const totalGiven = customers.reduce((sum, c) => {
-      const activeGiven = c.amountGiven || 0;
-      const settledGiven = (c.settledSchemes || []).reduce((sSum: number, s: any) => sSum + (s.payoutAmount || s.amountGiven || s.totalAmount || 0), 0);
-      return sum + (activeGiven > 0 ? activeGiven : settledGiven);
-    }, 0);
+    const totalGiven = customers.reduce((sum, c) => sum + (c.amountGiven || c.totalAmount || 0), 0);
     const totalCollected = payments.reduce((sum, p) => sum + p.amount, 0);
     const outstandingAmount = Math.max(0, totalGiven - totalCollected);
     const collectionProgress = totalGiven > 0 ? (totalCollected / totalGiven) * 100 : 0;

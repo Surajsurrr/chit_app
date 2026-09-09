@@ -1,3 +1,4 @@
+import './src/utils/alertHelper';
 import { registerRootComponent } from 'expo';
 
 import App from './App';

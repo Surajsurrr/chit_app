@@ -20,6 +20,7 @@ import TransactionRow from '../../components/TransactionRow';
 import FormInput from '../../components/FormInput';
 import Button from '../../components/Button';
 import { formatDateLong, formatDateShort, getPaymentStatusInfo, formatFrequency } from '../../utils/dateHelpers';
+import { confirmAction, showInfoMessage } from '../../utils/alertHelper';
 import { StatusBar } from 'expo-status-bar';
 
 export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = ({ route, navigation }) => {
@@ -34,6 +35,7 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
     recordPayment,
     selectCustomer,
     deleteCustomerEnrolledScheme,
+    deleteCustomer,
   } = useChitData();
 
   const currentCustomer = customers.find((c) => c.id === customerId);
@@ -93,11 +95,9 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
   const interestRate = customer.interestRate ?? (payoutAmt > 0 ? (interestAmt / payoutAmt) * 100 : 0);
 
   const enrolledSchemesList: any[] = Array.isArray(customer?.enrolledSchemes) ? customer.enrolledSchemes : [];
-  const hasSettled = Array.isArray(customer?.settledSchemes) && customer.settledSchemes.length > 0;
   const schemesToDisplay: any[] = enrolledSchemesList.length > 0
     ? enrolledSchemesList
-    : (!hasSettled && totalValue > 0)
-    ? [{
+    : [{
         id: 'LOAN-1',
         loanName: customer?.schemeId || 'Scheme #1',
         payoutAmount: payoutAmt,
@@ -108,47 +108,68 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
         frequency: customer?.frequency || 'daily',
         startDate: customer?.startDate || new Date().toISOString(),
         nextPaymentDate: customer?.nextPaymentDate || new Date().toISOString(),
-      }]
-    : [];
+      }];
+
+  const handleDeleteEntireCustomer = () => {
+    if (!customer) return;
+    confirmAction(
+      `Delete "${customer.name}"?`,
+      `Are you sure you want to delete ${customer.name}'s entire customer profile and all associated scheme information?`,
+      async () => {
+        const res = await deleteCustomer(customer.id);
+        if (res.success) {
+          showInfoMessage(
+            'Customer Profile Deleted ✓',
+            `"${customer.name}" and their scheme information have been deleted.`,
+            () => navigation.goBack()
+          );
+        } else {
+          showInfoMessage('Error', res.error || 'Failed to delete customer', undefined, 'error');
+        }
+      },
+      'Delete Customer',
+      'Cancel',
+      undefined,
+      {
+        warningNote: '⚠️ This action cannot be undone. All active records for this customer will be removed.',
+      }
+    );
+  };
 
   const handleDeleteEnrolledScheme = (schemeItem: any) => {
     if (!customer) return;
     const name = schemeItem.loanName || schemeItem.schemeName || 'Scheme';
-    const isSingleScheme = schemesToDisplay.length <= 1 && !hasSettled;
+    const isSingleScheme = schemesToDisplay.length <= 1;
 
-    Alert.alert(
+    confirmAction(
       `Delete "${name}"?`,
       isSingleScheme
-        ? `This is ${customer.name}'s only scheme. Deleting this scheme will completely remove their customer profile.\n\nAre you sure you want to proceed?`
-        : `Are you sure you want to delete "${name}" from ${customer.name}? Their remaining schemes and records will be retained.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Scheme',
-          style: 'destructive',
-          onPress: async () => {
-            const res = await deleteCustomerEnrolledScheme(customer.id, schemeItem.id || name);
-            if (res.success) {
-              if (res.customerDeleted) {
-                Alert.alert(
-                  'Customer Profile Deleted ✓',
-                  `Since "${name}" was ${customer.name}'s only scheme, their entire customer profile has been deleted.`,
-                  [
-                    {
-                      text: 'OK',
-                      onPress: () => navigation.goBack(),
-                    },
-                  ]
-                );
-              } else {
-                Alert.alert('Scheme Deleted ✓', `"${name}" has been removed from ${customer.name}'s profile.`);
-              }
-            } else {
-              Alert.alert('Error', res.error || 'Failed to delete scheme');
-            }
-          },
-        },
-      ]
+        ? `Are you sure you want to delete "${name}"?`
+        : `Are you sure you want to delete "${name}" from ${customer.name}? Their remaining schemes will be retained.`,
+      async () => {
+        const res = await deleteCustomerEnrolledScheme(customer.id, schemeItem.id || name);
+        if (res.success) {
+          if (res.customerDeleted) {
+            showInfoMessage(
+              'Customer Profile Deleted ✓',
+              `Since "${name}" was ${customer.name}'s only scheme, their entire customer profile has been deleted.`,
+              () => navigation.goBack()
+            );
+          } else {
+            showInfoMessage('Scheme Deleted ✓', `"${name}" has been removed from ${customer.name}'s profile.`);
+          }
+        } else {
+          showInfoMessage('Error', res.error || 'Failed to delete scheme', undefined, 'error');
+        }
+      },
+      'Delete Scheme',
+      'Cancel',
+      undefined,
+      {
+        warningNote: isSingleScheme
+          ? `⚠️ Note: This is ${customer.name}'s only active scheme. Deleting it will also delete their customer profile.`
+          : undefined,
+      }
     );
   };
 
@@ -620,6 +641,13 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
             >
               <Text style={styles.editTermsBtnText}>✏️ Edit Terms</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.deleteCustomerHeaderBtn}
+              onPress={handleDeleteEntireCustomer}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.deleteCustomerHeaderBtnText}>🗑️ Delete</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -700,72 +728,6 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
                 </Card>
               );
             })}
-          </View>
-        )}
-
-        {schemesToDisplay.length === 0 && (
-          <Card style={[styles.schemeItemCard, { backgroundColor: '#F8FAFC', alignItems: 'center', paddingVertical: SPACING.lg, marginBottom: SPACING.md }]}>
-            <Text style={{ fontSize: 14, color: COLORS.textMuted, fontWeight: '500' }}>
-              No active schemes currently. All prior schemes are settled!
-            </Text>
-          </Card>
-        )}
-
-        {/* Settled Schemes Section */}
-        {Array.isArray(customer?.settledSchemes) && customer.settledSchemes.length > 0 && (
-          <View style={{ marginTop: SPACING.sm, marginBottom: SPACING.md }}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionTitle, { color: '#15803D' }]}>
-                ✓ Settled Schemes ({customer.settledSchemes.length})
-              </Text>
-            </View>
-            <View style={styles.schemesListContainer}>
-              {customer.settledSchemes.map((settledItem: any, idx: number) => {
-                const sName = settledItem.schemeName || settledItem.loanName || `Settled Scheme #${idx + 1}`;
-                const sPayout = Number(settledItem.payoutAmount || 0);
-                const sTotal = Number(settledItem.totalAmount || 0);
-                const sPaid = Number(settledItem.totalPaid || sTotal);
-                const sDate = settledItem.settledAt ? formatDateShort(settledItem.settledAt) : 'Recently';
-
-                return (
-                  <Card key={settledItem.id || idx} style={[styles.schemeItemCard, { borderColor: '#BBF7D0', backgroundColor: '#F0FDF4' }]}>
-                    <View style={styles.schemeItemHeader}>
-                      <View style={[styles.schemeBadge, { backgroundColor: '#DCFCE7' }]}>
-                        <Text style={[styles.schemeBadgeText, { color: '#166534' }]}>{sName}</Text>
-                      </View>
-                      <Text style={[styles.schemeDateText, { color: '#15803D', fontWeight: '600' }]}>
-                        ✓ Settled on {sDate}
-                      </Text>
-                    </View>
-
-                    <View style={styles.schemeGrid}>
-                      <View style={styles.schemeGridCol}>
-                        <Text style={styles.schemeGridLabel}>PRINCIPAL</Text>
-                        <Text style={styles.schemeGridVal}>₹{sPayout.toLocaleString('en-IN')}</Text>
-                      </View>
-                      <View style={styles.schemeGridCol}>
-                        <Text style={styles.schemeGridLabel}>TOTAL VALUE</Text>
-                        <Text style={[styles.schemeGridVal, { fontWeight: '700', color: COLORS.primary }]}>
-                          ₹{sTotal.toLocaleString('en-IN')}
-                        </Text>
-                      </View>
-                      <View style={styles.schemeGridCol}>
-                        <Text style={styles.schemeGridLabel}>TOTAL PAID</Text>
-                        <Text style={[styles.schemeGridVal, { fontWeight: '700', color: COLORS.success }]}>
-                          ₹{sPaid.toLocaleString('en-IN')}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={[styles.schemeFooter, { borderTopColor: '#DCFCE7' }]}>
-                      <Text style={[styles.schemeFooterText, { color: '#166534' }]}>
-                        Status: <Text style={{ fontWeight: '700', color: COLORS.success }}>100% Repaid & Completed</Text>
-                      </Text>
-                    </View>
-                  </Card>
-                );
-              })}
-            </View>
           </View>
         )}
 
@@ -1459,6 +1421,19 @@ const styles = StyleSheet.create({
   editTermsBtnText: {
     ...TYPOGRAPHY.captionBold,
     color: '#2563EB',
+    fontSize: 12,
+  },
+  deleteCustomerHeaderBtn: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+    borderWidth: 1,
+    paddingHorizontal: SPACING.sm + 4,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  deleteCustomerHeaderBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#DC2626',
     fontSize: 12,
   },
   schemesListContainer: {

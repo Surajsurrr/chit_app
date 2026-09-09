@@ -495,9 +495,13 @@ export const dbService = {
   async deleteCustomer(customerId: string): Promise<{ success: boolean; error?: string }> {
     if (this.isLive()) {
       try {
+        await supabase.from('payments').delete().eq('customer_id', customerId);
+        await supabase.from('receipts').delete().eq('customer_id', customerId);
         const { error } = await supabase.from('customers').delete().eq('id', customerId);
         if (error) throw error;
         await this.fetchCustomers();
+        await this.fetchPayments();
+        await this.fetchReceipts();
         return { success: true };
       } catch (err: any) {
         console.error('Supabase deleteCustomer error:', err);
@@ -508,6 +512,15 @@ export const dbService = {
     const customers = await this.fetchCustomers();
     const updated = customers.filter((c) => c.id !== customerId);
     await AsyncStorage.setItem(CACHE_KEYS.CUSTOMERS, JSON.stringify(updated));
+
+    const payments = await this.fetchPayments();
+    const updatedPayments = payments.filter((p) => p.customerId !== customerId);
+    await AsyncStorage.setItem(CACHE_KEYS.PAYMENTS, JSON.stringify(updatedPayments));
+
+    const receipts = await this.fetchReceipts();
+    const updatedReceipts = receipts.filter((r) => r.customerId !== customerId);
+    await AsyncStorage.setItem(CACHE_KEYS.RECEIPTS, JSON.stringify(updatedReceipts));
+
     return { success: true };
   },
 

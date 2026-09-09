@@ -20,12 +20,21 @@ import Card from '../../components/Card';
 import FormInput from '../../components/FormInput';
 import Button from '../../components/Button';
 import { formatFrequency, formatDateShort, getPaymentStatusInfo } from '../../utils/dateHelpers';
+import { confirmAction, showInfoMessage } from '../../utils/alertHelper';
 import { StatusBar } from 'expo-status-bar';
 
 export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { customers, getCustomerStats, getSchemeStats, recordPayment, selectCustomer } = useChitData();
+  const {
+    customers,
+    getCustomerStats,
+    getSchemeStats,
+    recordPayment,
+    selectCustomer,
+    deleteCustomer,
+    deleteCustomerEnrolledScheme,
+  } = useChitData();
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<'ALL' | 'OVERDUE' | 'DUE_TODAY' | 'ACTIVE' | 'SETTLED'>('ALL');
+  const [filterType, setFilterType] = useState<'ALL' | 'OVERDUE' | 'DUE_TODAY' | 'ACTIVE'>('ALL');
 
   // Collection modal states
   const [isCollectModalVisible, setIsCollectModalVisible] = useState(false);
@@ -37,17 +46,14 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
 
   const customerData = customers.map((c) => {
     const stats = getCustomerStats(c.id);
-    const hasSettledSchemes = Array.isArray(c.settledSchemes) && c.settledSchemes.length > 0;
-    const enrolledList = Array.isArray(c.enrolledSchemes) ? c.enrolledSchemes : [];
-    const totalVal = c.totalAmount || c.amountGiven || (hasSettledSchemes ? (c.settledSchemes || []).reduce((sum: number, s: any) => sum + (s.totalAmount || 0), 0) : 0);
-    const isSettled = (totalVal > 0 && stats.remainingAmount === 0) || (hasSettledSchemes && enrolledList.length === 0);
+    const totalVal = c.totalAmount || c.amountGiven || 0;
+    const isSettled = totalVal > 0 && stats.remainingAmount === 0;
     const statusInfo = getPaymentStatusInfo(c.nextPaymentDate, stats.remainingAmount, c.frequency);
     return {
       customer: c,
       stats,
       totalVal,
       isSettled,
-      hasSettledSchemes,
       statusInfo,
     };
   });
@@ -55,9 +61,8 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   const overdueCount = customerData.filter((item) => item.statusInfo.isOverdue).length;
   const dueTodayCount = customerData.filter((item) => item.statusInfo.status === 'DUE_TODAY').length;
   const activeCount = customerData.filter((item) => !item.isSettled).length;
-  const settledCount = customerData.filter((item) => item.isSettled || item.hasSettledSchemes).length;
 
-  const filteredItems = customerData.filter(({ customer, isSettled, hasSettledSchemes, statusInfo }) => {
+  const filteredItems = customerData.filter(({ customer, isSettled, statusInfo }) => {
     const query = searchQuery.toLowerCase().trim();
     const matchesSearch =
       customer.name.toLowerCase().includes(query) ||
@@ -69,9 +74,65 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     if (filterType === 'OVERDUE') return statusInfo.isOverdue;
     if (filterType === 'DUE_TODAY') return statusInfo.status === 'DUE_TODAY';
     if (filterType === 'ACTIVE') return !isSettled;
-    if (filterType === 'SETTLED') return isSettled || hasSettledSchemes;
     return true;
   });
+
+  const handleDeleteCustomer = (cust: Customer) => {
+    confirmAction(
+      `Delete "${cust.name}"?`,
+      `Are you sure you want to delete this customer and all their scheme details? This will permanently remove their profile.`,
+      async () => {
+        const res = await deleteCustomer(cust.id);
+        if (res.success) {
+          showInfoMessage('Customer Deleted ✓', `"${cust.name}" and their scheme details have been deleted.`);
+        } else {
+          showInfoMessage('Error', res.error || 'Failed to delete customer', undefined, 'error');
+        }
+      },
+      'Delete Customer',
+      'Cancel',
+      undefined,
+      {
+        warningNote: '⚠️ This action cannot be undone. All active schemes and records for this customer will be removed.',
+      }
+    );
+  };
+
+  const handleDeleteSchemeFromCustomer = (cust: Customer, schemeItem: any) => {
+    const sName = schemeItem.loanName || schemeItem.schemeName || 'Scheme';
+    const enrolled = Array.isArray(cust.enrolledSchemes) ? cust.enrolledSchemes : [];
+    const isSingle = enrolled.length <= 1;
+
+    confirmAction(
+      `Delete "${sName}"?`,
+      isSingle
+        ? `Are you sure you want to delete "${sName}"?`
+        : `Are you sure you want to delete "${sName}" from ${cust.name}? Their remaining schemes will be retained.`,
+      async () => {
+        const res = await deleteCustomerEnrolledScheme(cust.id, schemeItem.id || sName);
+        if (res.success) {
+          if (res.customerDeleted) {
+            showInfoMessage(
+              'Customer Profile Deleted ✓',
+              `Since "${sName}" was ${cust.name}'s only scheme, their entire customer profile has been deleted.`
+            );
+          } else {
+            showInfoMessage('Scheme Deleted ✓', `"${sName}" has been removed from ${cust.name}'s profile.`);
+          }
+        } else {
+          showInfoMessage('Error', res.error || 'Failed to delete scheme', undefined, 'error');
+        }
+      },
+      'Delete Scheme',
+      'Cancel',
+      undefined,
+      {
+        warningNote: isSingle
+          ? `⚠️ Note: This is ${cust.name}'s only active scheme. Deleting it will also delete their customer profile.`
+          : undefined,
+      }
+    );
+  };
 
   const handleOpenCollect = (cust: Customer, schemeItem?: any) => {
     setSelectedCust(cust);
@@ -207,13 +268,6 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                     </Text>
                   </View>
                 )}
-                {Array.isArray(customer.settledSchemes) && customer.settledSchemes.length > 0 && (
-                  <View style={styles.settledCountBadge}>
-                    <Text style={styles.settledCountBadgeText}>
-                      ✓ {customer.settledSchemes.length} Settled
-                    </Text>
-                  </View>
-                )}
               </View>
               <Text style={styles.phoneText}>📞 +91 {customer.phone}</Text>
               {!hasMultipleSchemes && (
@@ -223,7 +277,7 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
               )}
             </TouchableOpacity>
 
-            {/* Quick Actions (Header level: shown only for single scheme) */}
+            {/* Quick Actions (Header level) */}
             <View style={styles.headerButtonsContainer}>
               {!hasMultipleSchemes && (!isSettled ? (
                 <TouchableOpacity
@@ -235,11 +289,7 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                     {statusInfo.isOverdue ? 'Collect ⚠️' : '✓ Collect'}
                   </Text>
                 </TouchableOpacity>
-              ) : (
-                <View style={styles.settledTag}>
-                  <Text style={styles.settledTagText}>✓ Settled</Text>
-                </View>
-              ))}
+              ) : null)}
 
               <TouchableOpacity
                 style={styles.viewProfileBtn}
@@ -248,10 +298,18 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
               >
                 <Text style={styles.viewProfileText}>View →</Text>
               </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.deleteCustomerCardBtn}
+                onPress={() => handleDeleteCustomer(customer)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.deleteCustomerCardBtnText}>🗑️ Delete</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
-          {/* Individual Scheme Rows with Separate Collect Buttons */}
+          {/* Individual Scheme Rows with Separate Collect & Delete Buttons */}
           {hasMultipleSchemes && (
             <View style={styles.multiSchemesList}>
               {enrolledList.map((schemeItem: any, idx: number) => {
@@ -291,19 +349,22 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                     </View>
 
                     <View style={styles.schemeCardRight}>
-                      {!isSchemeSettled ? (
+                      {!isSchemeSettled && (
                         <TouchableOpacity
                           style={styles.schemeCollectBtn}
                           onPress={() => handleOpenCollect(customer, schemeItem)}
                           activeOpacity={0.7}
                         >
-                          <Text style={styles.schemeCollectBtnText}>✓ Collect {sName}</Text>
+                          <Text style={styles.schemeCollectBtnText}>✓ Collect</Text>
                         </TouchableOpacity>
-                      ) : (
-                        <View style={styles.schemeSettledBadge}>
-                          <Text style={styles.schemeSettledBadgeText}>✓ Settled</Text>
-                        </View>
                       )}
+                      <TouchableOpacity
+                        style={styles.schemeCardDeleteBtn}
+                        onPress={() => handleDeleteSchemeFromCustomer(customer, schemeItem)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.schemeCardDeleteBtnText}>🗑️ Delete</Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
                 );
@@ -433,15 +494,6 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
           >
             <Text style={[styles.filterChipText, filterType === 'ACTIVE' && styles.filterChipTextActive]}>
               Active ({activeCount})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.filterChip, filterType === 'SETTLED' && styles.filterChipActive]}
-            onPress={() => setFilterType('SETTLED')}
-          >
-            <Text style={[styles.filterChipText, filterType === 'SETTLED' && styles.filterChipTextActive]}>
-              Settled ({settledCount})
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -791,6 +843,19 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: 11,
   },
+  deleteCustomerCardBtn: {
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  deleteCustomerCardBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#DC2626',
+    fontSize: 10,
+  },
   divider: {
     height: 1,
     backgroundColor: COLORS.border,
@@ -1029,6 +1094,20 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.captionBold,
     color: COLORS.white,
     fontSize: 11,
+  },
+  schemeCardDeleteBtn: {
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    marginTop: 4,
+  },
+  schemeCardDeleteBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#DC2626',
+    fontSize: 10,
   },
   schemeSettledBadge: {
     backgroundColor: '#DCFCE7',
