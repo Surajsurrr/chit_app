@@ -644,6 +644,25 @@ export const dbService = {
     return { success: true };
   },
 
+  async deleteScheme(schemeId: string): Promise<{ success: boolean; error?: string }> {
+    if (this.isLive()) {
+      try {
+        const { error } = await supabase.from('schemes').delete().eq('id', schemeId);
+        if (error) throw error;
+        await this.fetchSchemes();
+        return { success: true };
+      } catch (err: any) {
+        console.error('Supabase deleteScheme error:', err);
+        return { success: false, error: err?.message || 'Failed to delete scheme' };
+      }
+    }
+
+    const schemes = await this.fetchSchemes();
+    const updated = schemes.filter((s) => s.id !== schemeId);
+    await AsyncStorage.setItem(CACHE_KEYS.SCHEMES, JSON.stringify(updated));
+    return { success: true };
+  },
+
   // --------------------------------------------------------------------------
   // PAYMENTS & RECEIPTS
   // --------------------------------------------------------------------------

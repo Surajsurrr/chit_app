@@ -152,6 +152,20 @@ export interface ChitDataContextType {
     message?: string;
   };
   deleteCustomer: (customerId: string) => Promise<{ success: boolean; error?: string }>;
+  deleteScheme: (schemeId: string) => Promise<{
+    success: boolean;
+    error?: string;
+    affectedCustomersCount?: number;
+    deletedCustomersCount?: number;
+  }>;
+  deleteCustomerEnrolledScheme: (
+    customerId: string,
+    schemeIdentifier: string
+  ) => Promise<{
+    success: boolean;
+    customerDeleted?: boolean;
+    error?: string;
+  }>;
   getSchemeStats: (
     customerId: string,
     schemeIdOrName?: string
@@ -662,6 +676,229 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         await dbService.saveScheme(merged);
       }
     }
+  };
+
+  const deleteScheme = async (
+    schemeId: string
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    affectedCustomersCount?: number;
+    deletedCustomersCount?: number;
+  }> => {
+    const targetScheme = schemes.find((s) => s.id === schemeId);
+    const schemeName = targetScheme?.name || '';
+
+    // 1. Delete scheme from DB and local state
+    const dbRes = await dbService.deleteScheme(schemeId);
+    if (!dbRes.success) {
+      return { success: false, error: dbRes.error || 'Failed to delete scheme' };
+    }
+
+    setSchemes((prev) => prev.filter((s) => s.id !== schemeId));
+
+    // 2. Cascade deletion to all customers enrolled in this scheme
+    let affectedCount = 0;
+    let deletedCount = 0;
+    const updatedCustomersList: Customer[] = [];
+
+    for (const c of customers) {
+      const enrolledList: any[] = Array.isArray(c.enrolledSchemes) && c.enrolledSchemes.length > 0
+        ? c.enrolledSchemes
+        : (c.schemeId && c.schemeId.trim() !== ''
+            ? [{
+                id: c.schemeId,
+                schemeId: c.schemeId,
+                loanName: c.schemeId,
+                payoutAmount: c.payoutAmount || 0,
+                interestAmount: c.interestAmount || 0,
+                totalAmount: c.totalAmount || c.amountGiven || 0,
+                collectionAmount: c.collectionAmount || 0,
+                durationInstallments: c.durationInstallments || 50,
+                frequency: c.frequency || 'daily',
+                startDate: c.startDate || new Date().toISOString(),
+                nextPaymentDate: c.nextPaymentDate || new Date().toISOString(),
+              }]
+            : (c.totalAmount || c.amountGiven)
+            ? [{
+                id: 'LOAN-1',
+                loanName: 'Scheme #1',
+                payoutAmount: c.payoutAmount || 0,
+                interestAmount: c.interestAmount || 0,
+                totalAmount: c.totalAmount || c.amountGiven || 0,
+                collectionAmount: c.collectionAmount || 0,
+                durationInstallments: c.durationInstallments || 50,
+                frequency: c.frequency || 'daily',
+                startDate: c.startDate || new Date().toISOString(),
+                nextPaymentDate: c.nextPaymentDate || new Date().toISOString(),
+              }]
+            : []);
+
+      const isEnrolled =
+        c.schemeId === schemeId ||
+        (schemeName && c.schemeId === schemeName) ||
+        (c.enrolledSchemeIds && c.enrolledSchemeIds.includes(schemeId)) ||
+        enrolledList.some(
+          (s: any) =>
+            s.id === schemeId ||
+            s.schemeId === schemeId ||
+            (schemeName && s.loanName === schemeName) ||
+            (schemeName && s.schemeName === schemeName)
+        );
+
+      if (!isEnrolled) {
+        updatedCustomersList.push(c);
+        continue;
+      }
+
+      affectedCount++;
+
+      // Filter out the deleted scheme from this customer's enrolled list
+      const remainingSchemes = enrolledList.filter(
+        (s: any) =>
+          s.id !== schemeId &&
+          s.schemeId !== schemeId &&
+          (!schemeName || s.loanName !== schemeName) &&
+          (!schemeName || s.schemeName !== schemeName)
+      );
+
+      // If this was the customer's ONLY scheme, delete the entire customer profile
+      if (remainingSchemes.length === 0) {
+        deletedCount++;
+        dbService.deleteCustomer(c.id).catch((err) =>
+          console.error(`dbService.deleteCustomer error for ${c.id}:`, err)
+        );
+        if (selectedCustomerId === c.id) {
+          setSelectedCustomerIdState('');
+          AsyncStorage.removeItem(STORAGE_KEYS.SELECTED_CUST).catch(console.warn);
+        }
+      } else {
+        // Customer has other remaining schemes: recalculate aggregate terms
+        const sumPayout = remainingSchemes.reduce((sum, s) => sum + (Number(s.payoutAmount) || 0), 0);
+        const sumInterest = remainingSchemes.reduce((sum, s) => sum + (Number(s.interestAmount) || 0), 0);
+        const sumTotal = remainingSchemes.reduce((sum, s) => sum + (Number(s.totalAmount) || Number(s.amountGiven) || 0), 0);
+        const sumCollection = remainingSchemes.reduce((sum, s) => sum + (Number(s.collectionAmount) || 0), 0);
+        const lastFreq = remainingSchemes[remainingSchemes.length - 1].frequency || c.frequency || 'daily';
+        const nextActivePayDate = remainingSchemes[0].nextPaymentDate || c.nextPaymentDate;
+        const remainingIds = (c.enrolledSchemeIds || []).filter((id) => id !== schemeId);
+
+        const customerUpdates: Partial<Customer> = {
+          payoutAmount: sumPayout,
+          interestAmount: sumInterest,
+          interestRate: sumPayout > 0 ? (sumInterest / sumPayout) * 100 : 0,
+          totalAmount: sumTotal,
+          amountGiven: sumTotal,
+          collectionAmount: sumCollection,
+          frequency: lastFreq,
+          nextPaymentDate: nextActivePayDate,
+          schemeId: remainingSchemes[0]?.schemeId || remainingSchemes[0]?.id || '',
+          enrolledSchemes: remainingSchemes,
+          enrolledSchemeIds: remainingIds,
+        };
+
+        const updatedCustomer = { ...c, ...customerUpdates };
+        updatedCustomersList.push(updatedCustomer);
+
+        dbService.updateCustomer(c.id, customerUpdates).catch((err) =>
+          console.error(`dbService.updateCustomer error for ${c.id}:`, err)
+        );
+      }
+    }
+
+    setCustomers(updatedCustomersList);
+    return {
+      success: true,
+      affectedCustomersCount: affectedCount,
+      deletedCustomersCount: deletedCount,
+    };
+  };
+
+  const deleteCustomerEnrolledScheme = async (
+    customerId: string,
+    schemeIdentifier: string
+  ): Promise<{
+    success: boolean;
+    customerDeleted?: boolean;
+    error?: string;
+  }> => {
+    const customer = customers.find((c) => c.id === customerId);
+    if (!customer) {
+      return { success: false, error: 'Customer not found' };
+    }
+
+    const cleanIdent = (schemeIdentifier || '').trim().toLowerCase();
+    const enrolledList: any[] = Array.isArray(customer.enrolledSchemes) && customer.enrolledSchemes.length > 0
+      ? customer.enrolledSchemes
+      : (customer.totalAmount || customer.amountGiven)
+      ? [{
+          id: 'LOAN-1',
+          loanName: 'Scheme #1',
+          payoutAmount: customer.payoutAmount || 0,
+          interestAmount: customer.interestAmount || 0,
+          totalAmount: customer.totalAmount || customer.amountGiven || 0,
+          collectionAmount: customer.collectionAmount || 0,
+          durationInstallments: customer.durationInstallments || 50,
+          frequency: customer.frequency || 'daily',
+          startDate: customer.startDate || new Date().toISOString(),
+          nextPaymentDate: customer.nextPaymentDate || new Date().toISOString(),
+        }]
+      : [];
+
+    const remainingSchemes = enrolledList.filter((s: any) => {
+      const sId = (s.id || '').toLowerCase();
+      const sSchemeId = (s.schemeId || '').toLowerCase();
+      const sLoanName = (s.loanName || '').toLowerCase();
+      const sSchemeName = (s.schemeName || '').toLowerCase();
+      return (
+        sId !== cleanIdent &&
+        sSchemeId !== cleanIdent &&
+        sLoanName !== cleanIdent &&
+        sSchemeName !== cleanIdent
+      );
+    });
+
+    // If this was the only scheme (or 0 remaining), delete the entire customer profile
+    if (remainingSchemes.length === 0 || enrolledList.length <= 1) {
+      setCustomers((prev) => prev.filter((c) => c.id !== customerId));
+      if (selectedCustomerId === customerId) {
+        setSelectedCustomerIdState('');
+        AsyncStorage.removeItem(STORAGE_KEYS.SELECTED_CUST).catch(console.warn);
+      }
+      const res = await dbService.deleteCustomer(customerId);
+      return { success: res.success, customerDeleted: true, error: res.error };
+    }
+
+    // Customer has remaining schemes: recalculate aggregate terms
+    const sumPayout = remainingSchemes.reduce((sum, s) => sum + (Number(s.payoutAmount) || 0), 0);
+    const sumInterest = remainingSchemes.reduce((sum, s) => sum + (Number(s.interestAmount) || 0), 0);
+    const sumTotal = remainingSchemes.reduce((sum, s) => sum + (Number(s.totalAmount) || Number(s.amountGiven) || 0), 0);
+    const sumCollection = remainingSchemes.reduce((sum, s) => sum + (Number(s.collectionAmount) || 0), 0);
+    const lastFreq = remainingSchemes[remainingSchemes.length - 1].frequency || customer.frequency || 'daily';
+    const nextActivePayDate = remainingSchemes[0].nextPaymentDate || customer.nextPaymentDate;
+    const remainingIds = (customer.enrolledSchemeIds || []).filter(
+      (id) => id.toLowerCase() !== cleanIdent
+    );
+
+    const customerUpdates: Partial<Customer> = {
+      payoutAmount: sumPayout,
+      interestAmount: sumInterest,
+      interestRate: sumPayout > 0 ? (sumInterest / sumPayout) * 100 : 0,
+      totalAmount: sumTotal,
+      amountGiven: sumTotal,
+      collectionAmount: sumCollection,
+      frequency: lastFreq,
+      nextPaymentDate: nextActivePayDate,
+      schemeId: remainingSchemes[0]?.schemeId || remainingSchemes[0]?.id || '',
+      enrolledSchemes: remainingSchemes,
+      enrolledSchemeIds: remainingIds,
+    };
+
+    setCustomers((prev) =>
+      prev.map((c) => (c.id === customerId ? { ...c, ...customerUpdates } : c))
+    );
+
+    const res = await dbService.updateCustomer(customerId, customerUpdates);
+    return { success: res.success, customerDeleted: false, error: res.error };
   };
 
   const updateCustomerProfile = async (
@@ -1452,6 +1689,8 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         updateAdminProfile,
         recordPayment,
         deleteCustomer,
+        deleteScheme,
+        deleteCustomerEnrolledScheme,
         resetData,
         refreshFromCloud,
         loginAsAdmin,

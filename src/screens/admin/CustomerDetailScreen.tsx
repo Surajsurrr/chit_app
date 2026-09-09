@@ -33,6 +33,7 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
     addLoanToCustomer,
     recordPayment,
     selectCustomer,
+    deleteCustomerEnrolledScheme,
   } = useChitData();
 
   const currentCustomer = customers.find((c) => c.id === customerId);
@@ -90,6 +91,65 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
   const interestAmt = customer.interestAmount ?? Math.max(0, totalValue - (customer.payoutAmount || 0));
   const payoutAmt = customer.payoutAmount ?? Math.max(0, totalValue - interestAmt);
   const interestRate = customer.interestRate ?? (payoutAmt > 0 ? (interestAmt / payoutAmt) * 100 : 0);
+
+  const enrolledSchemesList: any[] = Array.isArray(customer?.enrolledSchemes) ? customer.enrolledSchemes : [];
+  const schemesToDisplay: any[] = enrolledSchemesList.length > 0
+    ? enrolledSchemesList
+    : (totalValue > 0)
+    ? [{
+        id: 'LOAN-1',
+        loanName: customer?.schemeId || 'Scheme #1',
+        payoutAmount: payoutAmt,
+        interestAmount: interestAmt,
+        totalAmount: totalValue,
+        collectionAmount: customer?.collectionAmount || 0,
+        durationInstallments: customer?.durationInstallments || 50,
+        frequency: customer?.frequency || 'daily',
+        startDate: customer?.startDate || new Date().toISOString(),
+        nextPaymentDate: customer?.nextPaymentDate || new Date().toISOString(),
+      }]
+    : [];
+
+  const handleDeleteEnrolledScheme = (schemeItem: any) => {
+    if (!customer) return;
+    const name = schemeItem.loanName || schemeItem.schemeName || 'Scheme';
+    const isSingleScheme = schemesToDisplay.length <= 1;
+
+    Alert.alert(
+      `Delete "${name}"?`,
+      isSingleScheme
+        ? `This is ${customer.name}'s only scheme. Deleting this scheme will completely remove their customer profile.\n\nAre you sure you want to proceed?`
+        : `Are you sure you want to delete "${name}" from ${customer.name}? Their remaining schemes will be retained.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Scheme',
+          style: 'destructive',
+          onPress: async () => {
+            const res = await deleteCustomerEnrolledScheme(customer.id, schemeItem.id || name);
+            if (res.success) {
+              if (res.customerDeleted) {
+                Alert.alert(
+                  'Customer Profile Deleted ✓',
+                  `Since "${name}" was ${customer.name}'s only scheme, their entire customer profile has been deleted.`,
+                  [
+                    {
+                      text: 'OK',
+                      onPress: () => navigation.goBack(),
+                    },
+                  ]
+                );
+              } else {
+                Alert.alert('Scheme Deleted ✓', `"${name}" has been removed from ${customer.name}'s profile.`);
+              }
+            } else {
+              Alert.alert('Error', res.error || 'Failed to delete scheme');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const stats = getCustomerStats(customerId);
   const customerPayments = payments.filter((p) => p.customerId === customerId);
@@ -542,7 +602,7 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
         {/* Lending Terms & Active Schemes */}
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>
-            Active Schemes ({Array.isArray(customer.enrolledSchemes) && customer.enrolledSchemes.length > 0 ? customer.enrolledSchemes.length : 1})
+            Active Schemes ({schemesToDisplay.length})
           </Text>
           <View style={{ flexDirection: 'row', gap: SPACING.xs }}>
             <TouchableOpacity
@@ -550,7 +610,7 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
               onPress={handleOpenAddLoanModal}
               activeOpacity={0.8}
             >
-              <Text style={styles.addSchemeBtnText}>➕ Add Second Scheme</Text>
+              <Text style={styles.addSchemeBtnText}>➕ Add Scheme</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.editTermsBtn}
@@ -563,16 +623,16 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
         </View>
 
         {/* Individual Scheme Breakdown Cards */}
-        {Array.isArray(customer.enrolledSchemes) && customer.enrolledSchemes.length > 0 && (
+        {schemesToDisplay.length > 0 && (
           <View style={styles.schemesListContainer}>
-            {customer.enrolledSchemes.map((schemeItem: any, idx: number) => {
+            {schemesToDisplay.map((schemeItem: any, idx: number) => {
               const p = Number(schemeItem.payoutAmount || 0);
               const i = Number(schemeItem.interestAmount || 0);
               const t = Number(schemeItem.totalAmount || (p + i) || 0);
               const c = Number(schemeItem.collectionAmount || 0);
               const dur = Number(schemeItem.durationInstallments || 50);
               const f = schemeItem.frequency || customer.frequency || 'daily';
-              const name = schemeItem.loanName || `Scheme #${idx + 1}`;
+              const name = schemeItem.loanName || schemeItem.schemeName || `Scheme #${idx + 1}`;
               const sDate = schemeItem.startDate ? formatDateShort(schemeItem.startDate) : 'Active';
 
               const schemeStats = getSchemeStats(customer.id, schemeItem.id || name);
@@ -616,16 +676,25 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
                         Paid: <Text style={{ color: COLORS.success, fontWeight: '700' }}>₹{schemeStats.paidAmount.toLocaleString('en-IN')}</Text> · Rem: <Text style={{ color: COLORS.danger, fontWeight: '700' }}>₹{schemeStats.remainingAmount.toLocaleString('en-IN')}</Text>
                       </Text>
                     </View>
-                    <TouchableOpacity
-                      style={[styles.schemeCollectBtn, isSchemeSettled && styles.schemeCollectBtnSettled]}
-                      onPress={() => handleOpenSchemeCollect(schemeItem)}
-                      activeOpacity={0.8}
-                      disabled={isSchemeSettled}
-                    >
-                      <Text style={styles.schemeCollectBtnText}>
-                        {isSchemeSettled ? '✓ Settled' : `✓ Collect ${name}`}
-                      </Text>
-                    </TouchableOpacity>
+                    <View style={styles.schemeBtnsGroup}>
+                      <TouchableOpacity
+                        style={styles.schemeDeleteBtn}
+                        onPress={() => handleDeleteEnrolledScheme(schemeItem)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.schemeDeleteBtnText}>🗑️ Delete</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.schemeCollectBtn, isSchemeSettled && styles.schemeCollectBtnSettled]}
+                        onPress={() => handleOpenSchemeCollect(schemeItem)}
+                        activeOpacity={0.8}
+                        disabled={isSchemeSettled}
+                      >
+                        <Text style={styles.schemeCollectBtnText}>
+                          {isSchemeSettled ? '✓ Settled' : `✓ Collect`}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </Card>
               );
@@ -1618,6 +1687,24 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     fontSize: 11,
     color: COLORS.textMuted,
+  },
+  schemeBtnsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  schemeDeleteBtn: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  schemeDeleteBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.danger,
+    fontSize: 11,
   },
   schemeCollectBtn: {
     backgroundColor: '#16A34A',

@@ -9,6 +9,7 @@ import {
   Modal,
   Platform,
   KeyboardAvoidingView,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useChitData } from '../../context/ChitDataContext';
@@ -21,7 +22,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Scheme } from '../../data/mockData';
 
 export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { schemes, customers, addScheme, updateScheme, logout, isAdminProfileComplete } = useChitData();
+  const { schemes, customers, addScheme, updateScheme, deleteScheme, logout, isAdminProfileComplete } = useChitData();
 
   // Create / Edit Scheme states
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -35,7 +36,55 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   const [formError, setFormError] = useState('');
 
   const getCustomerCount = (schemeId: string): number => {
-    return customers.filter((c) => c.schemeId === schemeId).length;
+    const targetScheme = schemes.find((s) => s.id === schemeId);
+    const targetName = targetScheme?.name || '';
+    return customers.filter((c) => {
+      const enrolled = Array.isArray(c.enrolledSchemes) ? c.enrolledSchemes : [];
+      return (
+        c.schemeId === schemeId ||
+        (targetName && c.schemeId === targetName) ||
+        (c.enrolledSchemeIds && c.enrolledSchemeIds.includes(schemeId)) ||
+        enrolled.some(
+          (s: any) =>
+            s.id === schemeId ||
+            s.schemeId === schemeId ||
+            (targetName && s.loanName === targetName) ||
+            (targetName && s.schemeName === targetName)
+        )
+      );
+    }).length;
+  };
+
+  const handleDeleteScheme = (scheme: Scheme) => {
+    const count = getCustomerCount(scheme.id);
+    const countText = count > 0 ? `\n\n⚠️ ${count} customer(s) are currently enrolled in this scheme.` : '';
+
+    Alert.alert(
+      `Delete "${scheme.name}"?`,
+      `Are you sure you want to delete this scheme? It will be removed for both admin and customer portals.${countText}\n\nNote: If this is a customer's only scheme, their entire customer profile will also be deleted.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Scheme',
+          style: 'destructive',
+          onPress: async () => {
+            const res = await deleteScheme(scheme.id);
+            if (res.success) {
+              let info = `Scheme "${scheme.name}" has been deleted successfully.`;
+              if (res.deletedCustomersCount && res.deletedCustomersCount > 0) {
+                info += `\n\n${res.deletedCustomersCount} customer profile(s) with no remaining schemes were also closed.`;
+              }
+              if (res.affectedCustomersCount && res.affectedCustomersCount > (res.deletedCustomersCount || 0)) {
+                info += `\n\n${res.affectedCustomersCount - (res.deletedCustomersCount || 0)} multi-scheme customer(s) had this scheme removed from their active profiles.`;
+              }
+              Alert.alert('Scheme Deleted ✓', info);
+            } else {
+              Alert.alert('Error', res.error || 'Failed to delete scheme');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleOpenCreateModal = () => {
@@ -210,13 +259,22 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
             <View style={styles.memberBadge}>
               <Text style={styles.memberBadgeText}>{memberCount} {memberCount === 1 ? 'member' : 'members'}</Text>
             </View>
-            <TouchableOpacity
-              style={styles.editBtn}
-              onPress={() => handleOpenEditModal(item)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.editBtnText}>✏️ Edit Scheme</Text>
-            </TouchableOpacity>
+            <View style={styles.headerBtnRow}>
+              <TouchableOpacity
+                style={styles.editBtn}
+                onPress={() => handleOpenEditModal(item)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.editBtnText}>✏️ Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteBtn}
+                onPress={() => handleDeleteScheme(item)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.deleteBtnText}>🗑️ Delete</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -621,9 +679,14 @@ const styles = StyleSheet.create({
     color: COLORS.secondary,
     fontSize: 10,
   },
+  headerBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   editBtn: {
     backgroundColor: COLORS.primaryLight + '15',
-    paddingHorizontal: SPACING.sm + 2,
+    paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
     borderRadius: 6,
     borderWidth: 1,
@@ -632,6 +695,19 @@ const styles = StyleSheet.create({
   editBtnText: {
     ...TYPOGRAPHY.captionBold,
     color: COLORS.primary,
+    fontSize: 10,
+  },
+  deleteBtn: {
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  deleteBtnText: {
+    ...TYPOGRAPHY.captionBold,
+    color: COLORS.danger,
     fontSize: 10,
   },
   divider: {
