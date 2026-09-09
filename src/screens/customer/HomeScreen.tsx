@@ -52,7 +52,9 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     );
   }
 
-  const totalValue = customer.totalAmount || customer.amountGiven || 0;
+  const hasSettledSchemes = Array.isArray(customer.settledSchemes) && customer.settledSchemes.length > 0;
+  const enrolledSchemes = Array.isArray(customer.enrolledSchemes) ? customer.enrolledSchemes : [];
+  const totalValue = customer.totalAmount || customer.amountGiven || (hasSettledSchemes ? (customer.settledSchemes || []).reduce((sum: number, s: any) => sum + (s.totalAmount || 0), 0) : 0);
   const interestAmt = customer.interestAmount ?? Math.max(0, totalValue - (customer.payoutAmount || 0));
   const payoutAmt = customer.payoutAmount ?? Math.max(0, totalValue - interestAmt);
 
@@ -67,9 +69,8 @@ export const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const statusInfo = getPaymentStatusInfo(customer.nextPaymentDate, stats.remainingAmount, customer.frequency);
   const isOverdue = statusInfo.isOverdue && stats.remainingAmount > 0;
   const isDueToday = statusInfo.status === 'DUE_TODAY' && stats.remainingAmount > 0;
-  const isSettled = stats.remainingAmount === 0 && totalValue > 0;
+  const isSettled = (stats.remainingAmount === 0 && totalValue > 0) || (hasSettledSchemes && enrolledSchemes.length === 0);
   const [showCompletionModal, setShowCompletionModal] = useState(isSettled);
-  const enrolledSchemes = Array.isArray(customer.enrolledSchemes) ? customer.enrolledSchemes : [];
   const hasMultipleSchemes = enrolledSchemes.length > 1;
 
   const nameInitials = customer.name

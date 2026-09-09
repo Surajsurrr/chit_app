@@ -93,9 +93,10 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
   const interestRate = customer.interestRate ?? (payoutAmt > 0 ? (interestAmt / payoutAmt) * 100 : 0);
 
   const enrolledSchemesList: any[] = Array.isArray(customer?.enrolledSchemes) ? customer.enrolledSchemes : [];
+  const hasSettled = Array.isArray(customer?.settledSchemes) && customer.settledSchemes.length > 0;
   const schemesToDisplay: any[] = enrolledSchemesList.length > 0
     ? enrolledSchemesList
-    : (totalValue > 0)
+    : (!hasSettled && totalValue > 0)
     ? [{
         id: 'LOAN-1',
         loanName: customer?.schemeId || 'Scheme #1',
@@ -113,13 +114,13 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
   const handleDeleteEnrolledScheme = (schemeItem: any) => {
     if (!customer) return;
     const name = schemeItem.loanName || schemeItem.schemeName || 'Scheme';
-    const isSingleScheme = schemesToDisplay.length <= 1;
+    const isSingleScheme = schemesToDisplay.length <= 1 && !hasSettled;
 
     Alert.alert(
       `Delete "${name}"?`,
       isSingleScheme
         ? `This is ${customer.name}'s only scheme. Deleting this scheme will completely remove their customer profile.\n\nAre you sure you want to proceed?`
-        : `Are you sure you want to delete "${name}" from ${customer.name}? Their remaining schemes will be retained.`,
+        : `Are you sure you want to delete "${name}" from ${customer.name}? Their remaining schemes and records will be retained.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -699,6 +700,72 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
                 </Card>
               );
             })}
+          </View>
+        )}
+
+        {schemesToDisplay.length === 0 && (
+          <Card style={[styles.schemeItemCard, { backgroundColor: '#F8FAFC', alignItems: 'center', paddingVertical: SPACING.lg, marginBottom: SPACING.md }]}>
+            <Text style={{ fontSize: 14, color: COLORS.textMuted, fontWeight: '500' }}>
+              No active schemes currently. All prior schemes are settled!
+            </Text>
+          </Card>
+        )}
+
+        {/* Settled Schemes Section */}
+        {Array.isArray(customer?.settledSchemes) && customer.settledSchemes.length > 0 && (
+          <View style={{ marginTop: SPACING.sm, marginBottom: SPACING.md }}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: '#15803D' }]}>
+                ✓ Settled Schemes ({customer.settledSchemes.length})
+              </Text>
+            </View>
+            <View style={styles.schemesListContainer}>
+              {customer.settledSchemes.map((settledItem: any, idx: number) => {
+                const sName = settledItem.schemeName || settledItem.loanName || `Settled Scheme #${idx + 1}`;
+                const sPayout = Number(settledItem.payoutAmount || 0);
+                const sTotal = Number(settledItem.totalAmount || 0);
+                const sPaid = Number(settledItem.totalPaid || sTotal);
+                const sDate = settledItem.settledAt ? formatDateShort(settledItem.settledAt) : 'Recently';
+
+                return (
+                  <Card key={settledItem.id || idx} style={[styles.schemeItemCard, { borderColor: '#BBF7D0', backgroundColor: '#F0FDF4' }]}>
+                    <View style={styles.schemeItemHeader}>
+                      <View style={[styles.schemeBadge, { backgroundColor: '#DCFCE7' }]}>
+                        <Text style={[styles.schemeBadgeText, { color: '#166534' }]}>{sName}</Text>
+                      </View>
+                      <Text style={[styles.schemeDateText, { color: '#15803D', fontWeight: '600' }]}>
+                        ✓ Settled on {sDate}
+                      </Text>
+                    </View>
+
+                    <View style={styles.schemeGrid}>
+                      <View style={styles.schemeGridCol}>
+                        <Text style={styles.schemeGridLabel}>PRINCIPAL</Text>
+                        <Text style={styles.schemeGridVal}>₹{sPayout.toLocaleString('en-IN')}</Text>
+                      </View>
+                      <View style={styles.schemeGridCol}>
+                        <Text style={styles.schemeGridLabel}>TOTAL VALUE</Text>
+                        <Text style={[styles.schemeGridVal, { fontWeight: '700', color: COLORS.primary }]}>
+                          ₹{sTotal.toLocaleString('en-IN')}
+                        </Text>
+                      </View>
+                      <View style={styles.schemeGridCol}>
+                        <Text style={styles.schemeGridLabel}>TOTAL PAID</Text>
+                        <Text style={[styles.schemeGridVal, { fontWeight: '700', color: COLORS.success }]}>
+                          ₹{sPaid.toLocaleString('en-IN')}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={[styles.schemeFooter, { borderTopColor: '#DCFCE7' }]}>
+                      <Text style={[styles.schemeFooterText, { color: '#166534' }]}>
+                        Status: <Text style={{ fontWeight: '700', color: COLORS.success }}>100% Repaid & Completed</Text>
+                      </Text>
+                    </View>
+                  </Card>
+                );
+              })}
+            </View>
           </View>
         )}
 

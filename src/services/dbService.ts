@@ -95,6 +95,7 @@ function mapCustomerFromRow(row: any): Customer {
     idProofNumber: row.id_proof_number || '',
     enrolledSchemeIds: Array.isArray(row.enrolled_scheme_ids) ? row.enrolled_scheme_ids : [],
     enrolledSchemes: schemesList,
+    settledSchemes: Array.isArray(row.settled_schemes) ? row.settled_schemes : [],
   };
 }
 
@@ -386,6 +387,7 @@ export const dbService = {
           id_proof_number: customer.idProofNumber || '',
           enrolled_scheme_ids: customer.enrolledSchemeIds || [],
           enrolled_schemes: customer.enrolledSchemes?.length ? customer.enrolledSchemes : [snapshot],
+          settled_schemes: customer.settledSchemes || [],
         };
 
         let { error } = await supabase.from('customers').insert(payloadWithAllCols);
@@ -400,6 +402,7 @@ export const dbService = {
           delete fallbackPayload.interest_amount;
           delete fallbackPayload.interest_rate;
           delete fallbackPayload.duration_installments;
+          delete fallbackPayload.settled_schemes;
           const retry = await supabase.from('customers').insert(fallbackPayload);
           error = retry.error;
         }
@@ -540,6 +543,7 @@ export const dbService = {
         if (updatedData.idProofType !== undefined) rowUpdates.id_proof_type = updatedData.idProofType;
         if (updatedData.idProofNumber !== undefined) rowUpdates.id_proof_number = updatedData.idProofNumber;
         if (updatedData.enrolledSchemeIds !== undefined) rowUpdates.enrolled_scheme_ids = updatedData.enrolledSchemeIds;
+        if (updatedData.settledSchemes !== undefined) rowUpdates.settled_schemes = updatedData.settledSchemes;
         // If explicit enrolledSchemes array is provided, preserve all multi-loan records!
         if (updatedData.enrolledSchemes !== undefined) {
           rowUpdates.enrolled_schemes = updatedData.enrolledSchemes;
@@ -572,6 +576,7 @@ export const dbService = {
           delete rowUpdates.interest_amount;
           delete rowUpdates.interest_rate;
           delete rowUpdates.duration_installments;
+          delete rowUpdates.settled_schemes;
           const retry = await supabase.from('customers').update(rowUpdates).eq('id', customerId);
           error = retry.error;
         }

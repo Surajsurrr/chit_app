@@ -31,8 +31,10 @@ export const PaymentsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     );
   }
 
+  const hasSettledSchemes = Array.isArray(customer.settledSchemes) && customer.settledSchemes.length > 0;
+  const enrolledSchemes = Array.isArray(customer.enrolledSchemes) ? customer.enrolledSchemes : [];
   const stats = getCustomerStats(customer.id);
-  const totalVal = customer.totalAmount || customer.amountGiven || 0;
+  const totalVal = customer.totalAmount || customer.amountGiven || (hasSettledSchemes ? (customer.settledSchemes || []).reduce((sum: number, s: any) => sum + (s.totalAmount || 0), 0) : 0);
   const customerPayments = payments.filter((p) => p.customerId === customer.id);
   const statusInfo = getPaymentStatusInfo(customer.nextPaymentDate, stats.remainingAmount, customer.frequency);
   const isOverdue = statusInfo.isOverdue && stats.remainingAmount > 0;
@@ -47,7 +49,7 @@ export const PaymentsScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Due Card */}
-        {totalVal === 0 ? (
+        {(totalVal === 0 && !hasSettledSchemes) ? (
           <Card style={styles.dueCard}>
             <View style={styles.noSchemeDueBox}>
               <Text style={styles.noSchemeDueIcon}>ℹ️</Text>

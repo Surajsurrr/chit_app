@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS customers (
   id_proof_number TEXT DEFAULT '',
   enrolled_scheme_ids JSONB DEFAULT '[]'::jsonb,
   enrolled_schemes JSONB DEFAULT '[]'::jsonb,
+  settled_schemes JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -73,6 +74,7 @@ ALTER TABLE customers ADD COLUMN IF NOT EXISTS interest_amount NUMERIC DEFAULT 0
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS interest_rate NUMERIC DEFAULT 0;
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS total_amount NUMERIC DEFAULT 0;
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS duration_installments INTEGER DEFAULT 0;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS settled_schemes JSONB DEFAULT '[]'::jsonb;
 
 -- 5. Create PAYMENTS Table
 CREATE TABLE IF NOT EXISTS payments (

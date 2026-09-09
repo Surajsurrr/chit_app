@@ -55,6 +55,21 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     }).length;
   };
 
+  const getSettledCount = (schemeId: string): number => {
+    const targetScheme = schemes.find((s) => s.id === schemeId);
+    const targetName = targetScheme?.name || '';
+    return customers.filter((c) => {
+      const settled = Array.isArray(c.settledSchemes) ? c.settledSchemes : [];
+      return settled.some(
+        (s: any) =>
+          s.id === schemeId ||
+          s.schemeId === schemeId ||
+          (targetName && s.loanName === targetName) ||
+          (targetName && s.schemeName === targetName)
+      );
+    }).length;
+  };
+
   const handleDeleteScheme = (scheme: Scheme) => {
     const count = getCustomerCount(scheme.id);
     const countText = count > 0 ? `\n\n⚠️ ${count} customer(s) are currently enrolled in this scheme.` : '';
@@ -240,6 +255,7 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
 
   const renderSchemeItem = ({ item }: { item: Scheme }) => {
     const memberCount = getCustomerCount(item.id);
+    const settledCount = getSettledCount(item.id);
     const interest = item.interestAmount || 0;
     const payout = item.payoutAmount || Math.max(0, item.totalAmount - interest);
     const totalCollected = item.durationWeeksOrMonths * item.collectionAmount;
@@ -256,8 +272,15 @@ export const SchemesScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           </View>
 
           <View style={styles.cardHeaderRight}>
-            <View style={styles.memberBadge}>
-              <Text style={styles.memberBadgeText}>{memberCount} {memberCount === 1 ? 'member' : 'members'}</Text>
+            <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
+              <View style={styles.memberBadge}>
+                <Text style={styles.memberBadgeText}>{memberCount} {memberCount === 1 ? 'member' : 'members'}</Text>
+              </View>
+              {settledCount > 0 && (
+                <View style={styles.settledBadge}>
+                  <Text style={styles.settledBadgeText}>✓ {settledCount} settled</Text>
+                </View>
+              )}
             </View>
             <View style={styles.headerBtnRow}>
               <TouchableOpacity
@@ -677,6 +700,17 @@ const styles = StyleSheet.create({
   memberBadgeText: {
     ...TYPOGRAPHY.captionBold,
     color: COLORS.secondary,
+    fontSize: 10,
+  },
+  settledBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  settledBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#15803D',
     fontSize: 10,
   },
   headerBtnRow: {

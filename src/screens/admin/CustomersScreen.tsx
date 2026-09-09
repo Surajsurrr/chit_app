@@ -37,14 +37,17 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
 
   const customerData = customers.map((c) => {
     const stats = getCustomerStats(c.id);
-    const totalVal = c.totalAmount || c.amountGiven || 0;
-    const isSettled = totalVal > 0 && stats.remainingAmount === 0;
+    const hasSettledSchemes = Array.isArray(c.settledSchemes) && c.settledSchemes.length > 0;
+    const enrolledList = Array.isArray(c.enrolledSchemes) ? c.enrolledSchemes : [];
+    const totalVal = c.totalAmount || c.amountGiven || (hasSettledSchemes ? (c.settledSchemes || []).reduce((sum: number, s: any) => sum + (s.totalAmount || 0), 0) : 0);
+    const isSettled = (totalVal > 0 && stats.remainingAmount === 0) || (hasSettledSchemes && enrolledList.length === 0);
     const statusInfo = getPaymentStatusInfo(c.nextPaymentDate, stats.remainingAmount, c.frequency);
     return {
       customer: c,
       stats,
       totalVal,
       isSettled,
+      hasSettledSchemes,
       statusInfo,
     };
   });
@@ -52,9 +55,9 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   const overdueCount = customerData.filter((item) => item.statusInfo.isOverdue).length;
   const dueTodayCount = customerData.filter((item) => item.statusInfo.status === 'DUE_TODAY').length;
   const activeCount = customerData.filter((item) => !item.isSettled).length;
-  const settledCount = customerData.filter((item) => item.isSettled).length;
+  const settledCount = customerData.filter((item) => item.isSettled || item.hasSettledSchemes).length;
 
-  const filteredItems = customerData.filter(({ customer, isSettled, statusInfo }) => {
+  const filteredItems = customerData.filter(({ customer, isSettled, hasSettledSchemes, statusInfo }) => {
     const query = searchQuery.toLowerCase().trim();
     const matchesSearch =
       customer.name.toLowerCase().includes(query) ||
@@ -66,7 +69,7 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     if (filterType === 'OVERDUE') return statusInfo.isOverdue;
     if (filterType === 'DUE_TODAY') return statusInfo.status === 'DUE_TODAY';
     if (filterType === 'ACTIVE') return !isSettled;
-    if (filterType === 'SETTLED') return isSettled;
+    if (filterType === 'SETTLED') return isSettled || hasSettledSchemes;
     return true;
   });
 
@@ -201,6 +204,13 @@ export const CustomersScreen: React.FC<{ navigation: any }> = ({ navigation }) =
                   <View style={styles.multiSchemeCountBadge}>
                     <Text style={styles.multiSchemeCountBadgeText}>
                       {enrolledList.length} Schemes Active
+                    </Text>
+                  </View>
+                )}
+                {Array.isArray(customer.settledSchemes) && customer.settledSchemes.length > 0 && (
+                  <View style={styles.settledCountBadge}>
+                    <Text style={styles.settledCountBadgeText}>
+                      ✓ {customer.settledSchemes.length} Settled
                     </Text>
                   </View>
                 )}
@@ -938,6 +948,19 @@ const styles = StyleSheet.create({
   multiSchemeCountBadgeText: {
     ...TYPOGRAPHY.captionBold,
     color: '#2563EB',
+    fontSize: 9,
+  },
+  settledCountBadge: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#BBF7D0',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  settledCountBadgeText: {
+    ...TYPOGRAPHY.captionBold,
+    color: '#15803D',
     fontSize: 9,
   },
   multiSchemesList: {

@@ -46,6 +46,7 @@ export interface Customer {
   nextPaymentDate: string;
   enrolledSchemeIds?: string[];
   enrolledSchemes?: (EnrolledScheme | LendingLoan | any)[];
+  settledSchemes?: (EnrolledScheme | LendingLoan | any)[];
   // Extended Profile & KYC Details
   email?: string;
   address?: string;

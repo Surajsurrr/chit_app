@@ -21,7 +21,7 @@ import Card from '../../components/Card';
 import StatusBadge from '../../components/StatusBadge';
 import FormInput from '../../components/FormInput';
 import Button from '../../components/Button';
-import { getPaymentStatusInfo, formatFrequency, PaymentStatusInfo } from '../../utils/dateHelpers';
+import { getPaymentStatusInfo, formatFrequency, PaymentStatusInfo, formatDateShort } from '../../utils/dateHelpers';
 import { StatusBar } from 'expo-status-bar';
 
 export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ route, navigation }) => {
@@ -59,18 +59,23 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
 
   const customerDataWithStatus = customers.map((c) => {
     const stats = getCustomerStats(c.id);
+    const hasSettledSchemes = Array.isArray(c.settledSchemes) && c.settledSchemes.length > 0;
+    const isFullySettled = (Array.isArray(c.enrolledSchemes) ? c.enrolledSchemes.length === 0 : true) && hasSettledSchemes;
     const statusInfo = getPaymentStatusInfo(c.nextPaymentDate, stats.remainingAmount, c.frequency);
     return {
       customer: c,
       stats,
       statusInfo,
+      hasSettledSchemes,
+      isFullySettled,
     };
   });
 
   const overdueCount = customerDataWithStatus.filter((item) => item.statusInfo.isOverdue).length;
   const dueTodayCount = customerDataWithStatus.filter((item) => item.statusInfo.status === 'DUE_TODAY').length;
+  const settledCount = customerDataWithStatus.filter((item) => item.isFullySettled || item.hasSettledSchemes || item.statusInfo.status === 'PAID').length;
 
-  const filteredItems = customerDataWithStatus.filter(({ customer, statusInfo }) => {
+  const filteredItems = customerDataWithStatus.filter(({ customer, statusInfo, isFullySettled, hasSettledSchemes }) => {
     const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
       customer.name.toLowerCase().includes(q) ||
@@ -81,7 +86,7 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
 
     if (statusFilter === 'OVERDUE') return statusInfo.isOverdue;
     if (statusFilter === 'DUE_TODAY') return statusInfo.status === 'DUE_TODAY';
-    if (statusFilter === 'PAID') return statusInfo.status === 'PAID';
+    if (statusFilter === 'PAID') return statusInfo.status === 'PAID' || isFullySettled || hasSettledSchemes;
     return true;
   });
 
@@ -236,8 +241,9 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
   };
 
   const renderCustomerItem = ({ item }: { item: typeof customerDataWithStatus[0] }) => {
-    const { customer, stats, statusInfo } = item;
+    const { customer, stats, statusInfo, hasSettledSchemes, isFullySettled } = item;
     const isOverdue = statusInfo.isOverdue;
+    const settledList = customer.settledSchemes || [];
 
     return (
       <Card
@@ -265,16 +271,35 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
               <View style={styles.custIdBadge}>
                 <Text style={styles.custIdBadgeText}>{customer.id}</Text>
               </View>
-              <StatusBadge status={statusInfo.badgeLabel} />
+              <StatusBadge status={isFullySettled ? 'PAID' : statusInfo.badgeLabel} />
             </View>
             <Text style={styles.frequencyText}>
               Installment: ₹{customer.collectionAmount.toLocaleString('en-IN')} · {formatFrequency(customer.frequency)}
             </Text>
-            <Text style={[styles.dueInfoText, isOverdue && styles.overdueDueInfoText]}>
-              Due Date: {statusInfo.formattedDueDate} {isOverdue ? `(${statusInfo.statusText})` : ''}
-            </Text>
+            {!isFullySettled ? (
+              <Text style={[styles.dueInfoText, isOverdue && styles.overdueDueInfoText]}>
+                Due Date: {statusInfo.formattedDueDate} {isOverdue ? `(${statusInfo.statusText})` : ''}
+              </Text>
+            ) : (
+              <Text style={[styles.dueInfoText, { color: COLORS.success }]}>
+                ✓ All schemes fully settled
+              </Text>
+            )}
           </View>
         </View>
+
+        {hasSettledSchemes && (
+          <View style={styles.settledInfoBox}>
+            <Text style={styles.settledInfoTitle}>
+              ✓ Settled Scheme{settledList.length > 1 ? 's' : ''} ({settledList.length}):
+            </Text>
+            {settledList.map((s: any, idx: number) => (
+              <Text key={s.id || idx} style={styles.settledSchemeName}>
+                • {s.schemeName || s.loanName || 'Scheme'} — ₹{(s.totalAmount || s.payoutAmount || 0).toLocaleString('en-IN')} (Closed {s.settledAt ? formatDateShort(s.settledAt) : 'Recently'})
+              </Text>
+            ))}
+          </View>
+        )}
 
         <View style={styles.divider} />
 
@@ -286,7 +311,7 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
             </Text>
           </View>
 
-          {statusInfo.status !== 'PAID' ? (
+          {(!isFullySettled && statusInfo.status !== 'PAID') ? (
             <View style={styles.actionsRow}>
               {/* Message Reminder Button */}
               <TouchableOpacity
@@ -311,8 +336,17 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.completedBadge}>
-              <Text style={styles.completedText}>Fully Settled</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: SPACING.sm }}>
+              <View style={styles.completedBadge}>
+                <Text style={styles.completedText}>Fully Settled</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.viewHistoryBtn}
+                onPress={() => navigation.navigate('CustomerDetail', { customerId: customer.id })}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.viewHistoryBtnText}>View Details →</Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -401,7 +435,7 @@ export const CollectionsScreen: React.FC<{ route: any; navigation: any }> = ({ r
               onPress={() => setStatusFilter('PAID')}
             >
               <Text style={[styles.filterChipText, statusFilter === 'PAID' && styles.filterChipTextActive]}>
-                Settled
+                Settled ({settledCount})
               </Text>
             </TouchableOpacity>
 
@@ -1212,6 +1246,40 @@ const styles = StyleSheet.create({
   modalSchemeChipSubActive: {
     color: '#1D4ED8',
     fontWeight: '600',
+  },
+  settledInfoBox: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 8,
+    padding: SPACING.sm,
+    marginTop: SPACING.xs,
+    marginBottom: SPACING.xs,
+  },
+  settledInfoTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#166534',
+    marginBottom: 4,
+  },
+  settledSchemeName: {
+    fontSize: 11,
+    color: '#15803D',
+    marginLeft: 4,
+    marginBottom: 2,
+  },
+  viewHistoryBtn: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  viewHistoryBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.secondary,
   },
 });
 
