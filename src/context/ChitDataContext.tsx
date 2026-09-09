@@ -320,16 +320,16 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (cloudPayments && cloudPayments.length >= 0) setPayments(cloudPayments);
       if (cloudReceipts && cloudReceipts.length >= 0) setReceipts(cloudReceipts);
 
-      // Session validity verification
-      if (currentUserRole === 'admin' && currentAdminUser) {
-        const adminExists = (cloudAdmins || []).some(
+      // Session validity verification (only evaluate if non-empty cloud list returned)
+      if (currentUserRole === 'admin' && currentAdminUser && cloudAdmins && cloudAdmins.length > 0) {
+        const adminExists = cloudAdmins.some(
           (a) => a.username.toLowerCase() === currentAdminUser.toLowerCase()
         );
         if (!adminExists) {
           logout();
         }
-      } else if (currentUserRole === 'customer' && currentUserId) {
-        const custExists = (cloudCustomers || []).some((c) => c.id === currentUserId);
+      } else if (currentUserRole === 'customer' && currentUserId && cloudCustomers && cloudCustomers.length > 0) {
+        const custExists = cloudCustomers.some((c) => c.id === currentUserId);
         if (!custExists) {
           logout();
         }
@@ -1076,12 +1076,8 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         );
       }
 
-      // If customer profile is currently open or logged in and all schemes completed, log them out
-      if (!hasRemainingSchemes && (currentUserId === customerId || selectedCustomerId === customerId)) {
-        setTimeout(() => {
-          logout();
-        }, 150);
-      }
+      // Do not automatically call logout() when a scheme completes so the admin is never kicked out of their dashboard.
+      // Customers whose schemes are completed will see their completion notice and can log out manually when ready.
     } else {
       // Normal installment: update next payment date
       let updatedEnrolledSchemes = customer.enrolledSchemes;
@@ -1127,6 +1123,7 @@ export const ChitDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setSelectedCustomerIdState(customerId);
     } else {
       setSelectedCustomerIdState('');
+      AsyncStorage.removeItem(STORAGE_KEYS.SELECTED_CUST).catch(console.warn);
     }
 
     // Asynchronously synchronize payment with central database

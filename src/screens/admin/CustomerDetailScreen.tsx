@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -35,7 +35,12 @@ export const CustomerDetailScreen: React.FC<{ route: any; navigation: any }> = (
     selectCustomer,
   } = useChitData();
 
-  const customer = customers.find((c) => c.id === customerId);
+  const currentCustomer = customers.find((c) => c.id === customerId);
+  const lastCustomerRef = useRef<any>(null);
+  if (currentCustomer) {
+    lastCustomerRef.current = currentCustomer;
+  }
+  const customer = currentCustomer || lastCustomerRef.current;
 
   // Edit Terms Modal State
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
